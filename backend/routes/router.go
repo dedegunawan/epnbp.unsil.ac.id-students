@@ -18,6 +18,9 @@ func SetupRouter() *gin.Engine {
 		return
 	})
 
+	r.GET("/payment-callback", controllers.PaymentCallbackHandler)
+	r.POST("/payment-callback", controllers.PaymentCallbackHandler)
+
 	auth.InitOIDC()
 
 	RegisterAuthRoutes(r)
