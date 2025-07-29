@@ -161,7 +161,7 @@ export const AuthTokenProvider = ({
 
         } catch (err) {
             console.error("Gagal memuat profil:", err);
-            logout(); // optional: logout jika gagal memuat profil
+            if(import.meta.env?.REDIRECT_ON_FAIL_PROFILE == 1) logout(); // optional: logout jika gagal memuat profil
         }
     }, [token, logout]);
 
