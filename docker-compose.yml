@@ -34,8 +34,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-    ports:
-    - "127.0.0.1:3131:80"
     # ❌ Tidak diekspos ke luar
 
   frontend:
@@ -56,6 +54,8 @@ services:
       timeout: 3s
       retries: 3
     # ❌ Tidak diekspos ke luar
+    ports:
+    - "127.0.0.1:3131:80"
     networks:
       - dev-network
 
