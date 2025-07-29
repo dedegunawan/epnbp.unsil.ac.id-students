@@ -47,3 +47,13 @@ func (r *TagihanRepository) GetAllUnpaidBillsExcept(studentID string, academicYe
 		Find(&bills).Error
 	return bills, err
 }
+
+// Ambil tagihan mahasiswa berdasarkan student_id & academic_year
+func (r *TagihanRepository) GetAllPaidBillsExcept(studentID string, academicYear string) ([]models.StudentBill, error) {
+	var bills []models.StudentBill
+	err := r.DB.
+		Where("student_id = ? AND academic_year <> ? and ( (quantity * amount ) - paid_amount) <= 0 ", studentID, academicYear).
+		Order("created_at ASC").
+		Find(&bills).Error
+	return bills, err
+}

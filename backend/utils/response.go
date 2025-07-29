@@ -23,7 +23,7 @@ func ErrorHandler(c *gin.Context, code int, message string) {
 
 	if opt == ERROR_TO_FRONTEND {
 		url := os.Getenv("FRONTEND_ERROR_URL")
-		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s?code%d&message=%s", url, code, message))
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s?code=%d&error=%s", url, code, message))
 		return
 	} else {
 		c.JSON(code, gin.H{"error": message})

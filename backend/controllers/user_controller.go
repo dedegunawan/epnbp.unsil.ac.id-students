@@ -80,6 +80,11 @@ func GetStudentBillStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
 		return
 	}
+	paidTagihan, err := tagihanRepo.GetAllPaidBillsExcept(mhswID, activeYear.AcademicYear)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
+		return
+	}
 
 	// Pisahkan: tagihan harus dibayar (belum lunas), dan histori
 	var tagihanHarusDibayar []models.StudentBill
@@ -97,6 +102,9 @@ func GetStudentBillStatus(c *gin.Context) {
 
 	for _, t := range unpaidTagihan {
 		tagihanHarusDibayar = append(tagihanHarusDibayar, t)
+	}
+	for _, t := range paidTagihan {
+		historyTagihan = append(historyTagihan, t)
 	}
 
 	isGenerated := len(tagihan) > 0

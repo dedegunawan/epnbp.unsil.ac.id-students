@@ -105,16 +105,18 @@ func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 
 	client.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
 
+	url := "https://simak.unsil.ac.id/api/v2/mahasiswa/" + mhswID
 	// 1. Ambil data mahasiswa
 	mahasiswaResp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetHeader("x-app-id", appID).
 		SetHeader("x-app-key", appKey).
-		Get("https://simak.unsil.ac.id/api/v2/mahasiswa/" + mhswID)
+		Get(url)
 	if err != nil {
 		return fmt.Errorf("gagal ambil data mahasiswa: %w", err)
 	}
 	if mahasiswaResp.IsError() {
+		utils.Log.Info("API SIMAK ERROR : URL : ", url, " | x-app-id : ", appID, " | app-key : ", appKey)
 		return fmt.Errorf("API SIMAK mahasiswa error: %s", mahasiswaResp.Status())
 	}
 
