@@ -44,6 +44,9 @@ export const GenerateBills = () => {
 
   return (
       <div className="flex justify-end mb-4">
+        <div className="border p-4 rounded text-blue-600 border-blue-500 bg-blue-50">
+          <p className="text-sm font-medium">Anda belum membuat tagihan. Silahkan klik "Generate Tagihan"</p>
+        </div>
         <Button onClick={handleGenerate} disabled={loading}>
           {loading ? "Memproses..." : "Generate Tagihan"}
         </Button>
