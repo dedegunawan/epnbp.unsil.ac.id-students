@@ -1,57 +1,56 @@
 version: '3.8'
+
 services:
-  backend:
+  db:
+    image: postgres:15
+    container_name: production-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_pass
+      POSTGRES_DB: dev_db
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dev-network
+
+  golang-backend:
     build:
       context: ./backend
-    container_name: backend-app
+      dockerfile: Dockerfile
+    container_name: ujian-backend-production
     restart: always
-    env_file:
-      - ./backend/.env
-    networks:
-      - app-network
     depends_on:
       - db
+    env_file:
+      - env/backend.env.production
+    networks:
+      - dev-network
+    # ❌ Tidak diekspos ke luar
 
   frontend:
     build:
-      context: ./frontend
-    container_name: frontend-app
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      args:
+        ENV_FILE: ./env/frontend.env.production
+    container_name: ujian-frontend-production
     restart: always
-    env_file:
-      - ./frontend/.env
-    networks:
-      - app-network
-
-  db:
-    image: postgres:15
-    container_name: postgres-db
-    restart: always
-    environment:
-      POSTGRES_USER: youruser
-      POSTGRES_PASSWORD: yourpassword
-      POSTGRES_DB: yourdb
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - app-network
-
-  nginx:
-    image: nginx:alpine
-    container_name: nginx-proxy
-    restart: always
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - frontend
-      - backend
+      - golang-backend
+    env_file:
+      - env/frontend.env.production
+    # ❌ Tidak diekspos ke luar
     networks:
-      - app-network
+      - dev-network
 
 volumes:
-  postgres-data:
+  pgdata:
+  minio_data:
+  keycloak_db_data:
 
 networks:
-  app-network:
+  dev-network:
     driver: bridge
