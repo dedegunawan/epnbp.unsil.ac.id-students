@@ -4,6 +4,7 @@ import { useToast } from "@/components/ui/use-toast";
 import axios from "axios";
 import { useAuthToken } from "@/auth/auth-token-context";
 import { useStudentBills } from "@/bill/context.tsx";
+import api from "@/lib/axios.ts";
 
 export const GenerateBills = () => {
   const { token } = useAuthToken();
@@ -16,8 +17,8 @@ export const GenerateBills = () => {
 
     setLoading(true);
     try {
-      await axios.post(
-          `/api/v1/student-bill`,
+      await api.post(
+          `/v1/student-bill`,
           {},
           {
             headers: {
