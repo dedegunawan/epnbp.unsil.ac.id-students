@@ -6,6 +6,7 @@ import {StudentBillResponse, useStudentBills} from "@/bill/context.tsx";
 import {useCallback} from "react";
 import axios from "axios";
 import {useAuthToken} from "@/auth/auth-token-context.tsx";
+import api from "@/lib/axios.ts";
 
 export interface StudentBill {
   ID: number;
@@ -77,8 +78,8 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
     if (!token) return;
 
     try {
-      const res = await axios.get<{ pay_url: string }>(
-          `/api/generate/${studentBillID}`,
+      const res = await api.get<{ pay_url: string }>(
+          `/v1/generate/${studentBillID}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
