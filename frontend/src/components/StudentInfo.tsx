@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { User, GraduationCap, Calendar, MapPin } from "lucide-react";
+import { User, GraduationCap, Calendar, MapPin, Mail } from "lucide-react";
 import { useAuthToken } from "@/auth/auth-token-context.tsx";
 import { useEffect, useMemo } from "react";
 import {useStudentBills} from "@/bill/context.tsx";
@@ -103,7 +103,7 @@ export const StudentInfo = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-primary" />
+            <Mail className="h-4 w-4 text-primary" />
             <div>
               <p className="font-medium">Email</p>
               <p className="text-muted-foreground">{studentData.email}</p>

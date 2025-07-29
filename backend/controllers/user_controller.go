@@ -61,6 +61,16 @@ func GetStudentBillStatus(c *gin.Context) {
 
 	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
 
+	full_data := mahasiswa.ParseFullData()
+	statusMhswID, ok := full_data["StatusMhswID"].(string)
+	if !ok || statusMhswID == "" {
+		statusMhswID = "-"
+	}
+	// Panggil repository untuk ambil FinanceYear aktif
+	if statusMhswID != "A" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
+		return
+	}
 	// Panggil repository untuk ambil FinanceYear aktif
 	activeYear, err := tagihanRepo.GetActiveFinanceYear()
 	if err != nil {
