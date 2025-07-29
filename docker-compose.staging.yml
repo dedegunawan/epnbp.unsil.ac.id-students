@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: staging-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_pass
+      POSTGRES_DB: dev_db
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dev-network
+
+  golang-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ujian-backend-staging
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - env/backend.env.staging
+    networks:
+      - dev-network
+    # ❌ Tidak diekspos ke luar
+
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      args:
+        ENV_FILE: ./env/frontend.env.staging
+    container_name: ujian-frontend-staging
+    restart: always
+    depends_on:
+      - golang-backend
+    env_file:
+      - env/frontend.env.staging
+    ports:
+      - "8081:80"  # ✅ Entry point staging (http://localhost:3000)
+    networks:
+      - dev-network
+
+volumes:
+  pgdata:
+  minio_data:
+  keycloak_db_data:
+
+networks:
+  dev-network:
+    driver: bridge
