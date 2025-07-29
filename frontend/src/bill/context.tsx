@@ -6,7 +6,7 @@ import React, {
     useCallback,
     ReactNode,
 } from "react";
-import axios from "axios";
+import { api } from "@/lib/axios";
 import { useAuthToken } from "@/auth/auth-token-context";
 
 // --------- TIPE DATA ---------
@@ -81,8 +81,8 @@ export const StudentBillProvider = ({ children }: { children: ReactNode }) => {
         setError(null);
 
         try {
-            const res = await axios.get<StudentBillResponse>(
-                `/api/v1/student-bill`,
+            const res = await api.get<StudentBillResponse>(
+                `/v1/student-bill`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,

@@ -6,7 +6,7 @@ import React, {
     useCallback,
     ReactNode,
 } from "react";
-import axios from "axios";
+import { api } from "@/lib/axios.ts";
 
 interface Fakultas {
     id: number;
@@ -141,7 +141,7 @@ export const AuthTokenProvider = ({
         if (!token) return;
 
         try {
-            const res = await axios.get<UserProfile>(`/api/v1/me`, {
+            const res = await api.get<UserProfile>(`/v1/me`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
