@@ -1,6 +1,7 @@
 package models
 
 import (
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"time"
 )
@@ -17,6 +18,15 @@ type PayUrl struct {
 	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
+type PaymentCallback struct {
+	ID            uint           `gorm:"primaryKey" json:"id"`
+	StudentBillID *uint          `gorm:"column:student_bill_id" json:"student_bill_id"`
+	Request       datatypes.JSON `gorm:"type:json" json:"request"`  // seluruh isi request (body, header, url, dsb)
+	Response      datatypes.JSON `gorm:"type:json" json:"response"` // response kita ke provider
+}
+
 func MigrateEpnbp(db *gorm.DB) {
-	db.AutoMigrate(&PayUrl{})
+	db.AutoMigrate(&PayUrl{},
+		&PaymentCallback{},
+	)
 }

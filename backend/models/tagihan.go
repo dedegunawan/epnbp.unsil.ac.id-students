@@ -9,13 +9,14 @@ import (
 type FinanceYear struct {
 	ID uint `gorm:"primaryKey"`
 
-	Code           string `gorm:"size:20;uniqueIndex"` // Optional code e.g. "20251"
-	AcademicYear   string `gorm:"size:10;index"`       // e.g. "20251"
-	FiscalYear     string `gorm:"size:4;index"`        // e.g. "2025"
-	FiscalSemester string `gorm:"size:10"`             // e.g. "2", "Genap", or "1", "2"
+	Code           string `gorm:"size:20;uniqueIndex"`         // Optional code e.g. "20251"
+	Description    string `gorm:"size:255" json:"description"` // Optional code e.g. "20251"
+	AcademicYear   string `gorm:"size:10;index"`               // e.g. "20251"
+	FiscalYear     string `gorm:"size:4;index"`                // e.g. "2025"
+	FiscalSemester string `gorm:"size:10"`                     // e.g. "2", "Genap", or "1", "2"
 
-	StartDate time.Time `gorm:"not null"` // Presisi detik
-	EndDate   time.Time `gorm:"not null"`
+	StartDate time.Time `gorm:"not null" json:"startDate"` // Presisi detik
+	EndDate   time.Time `gorm:"not null" json:"endDate"`
 
 	IsActive bool `gorm:"default:false;index"` // Menandakan tahun aktif
 

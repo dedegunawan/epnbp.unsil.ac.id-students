@@ -22,6 +22,7 @@ func SsoLoginHandler(c *gin.Context) {
 	authCodeURL := auth.OAuth2Config.AuthCodeURL("state-value", oauth2.AccessTypeOffline)
 	c.Redirect(http.StatusTemporaryRedirect, authCodeURL)
 }
+
 func SsoLogoutHandler(c *gin.Context) {
 	redirectURI := os.Getenv("OIDC_LOGOUT_REDIRECT") // e.g. https://your-app.com
 	clientID := os.Getenv("OIDC_CLIENT_ID")
@@ -49,7 +50,7 @@ func LoginHandler(c *gin.Context) {
 
 	user, err := userRepo.FindByEmail(req.Email)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		utils.ErrorHandler(c, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
 
@@ -63,12 +64,12 @@ func LoginHandler(c *gin.Context) {
 	// Validasi password (dengan bcrypt)
 	if err := bcrypt.CompareHashAndPassword([]byte(*user.Password), []byte(req.Password)); err != nil {
 		utils.Log.Info(fmt.Sprintf("Login using email: %s, password: %s, hash: %s, err: %s", user.Email, req.Password, *user.Password, err.Error()))
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		utils.ErrorHandler(c, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
 
 	if user.IsActive == false {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User is not active"})
+		utils.ErrorHandler(c, http.StatusUnauthorized, "User is not active")
 		return
 	}
 
@@ -77,7 +78,7 @@ func LoginHandler(c *gin.Context) {
 	// Buat token JWT
 	token, err := utils.GenerateJWT(user.ID, user.Email, user.Name, config.GetDefaultTokenExpired())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
 
@@ -89,7 +90,7 @@ func LoginHandler(c *gin.Context) {
 		token,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save token"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to save token")
 		return
 	}
 
@@ -106,32 +107,33 @@ func LoginHandler(c *gin.Context) {
 func RefreshHandler(c *gin.Context) {
 
 }
+
 func CallbackHandler(c *gin.Context) {
 	ctx := context.Background()
 	code := c.Query("code")
 
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No code provided"})
+		utils.ErrorHandler(c, http.StatusBadRequest, "No code provided")
 		return
 	}
 
 	token, err := auth.OAuth2Config.Exchange(ctx, code)
 	if err != nil {
 		log.Println("❌ Token exchange failed:", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token exchange failed"})
+		utils.ErrorHandler(c, http.StatusUnauthorized, "Token exchange failed")
 		return
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Missing id_token in token response"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Missing id_token in token response")
 		return
 	}
 
 	idToken, err := auth.Verifier.Verify(ctx, rawIDToken)
 	//utils.Log.Info("Verify token email : ", idToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid ID Token"})
+		utils.ErrorHandler(c, http.StatusUnauthorized, "Invalid ID Token")
 		return
 	}
 
@@ -142,7 +144,7 @@ func CallbackHandler(c *gin.Context) {
 		Name  string `json:"name"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse claims"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to parse claims")
 		return
 	}
 
@@ -156,7 +158,7 @@ func CallbackHandler(c *gin.Context) {
 	// Temukan atau buat user berdasarkan sso_id
 	user, err := userService.GetOrCreateByEmail(claims.Sub, claims.Email, claims.Name)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create or find user"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to create or find user")
 		return
 	}
 
@@ -167,7 +169,7 @@ func CallbackHandler(c *gin.Context) {
 
 	if err != nil {
 		utils.Log.Info(fmt.Sprintf("Err : %s", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create mahasiswa user"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to create mahasiswa user")
 	}
 
 	// Simpan access_token dan refresh_token
@@ -179,7 +181,7 @@ func CallbackHandler(c *gin.Context) {
 		token.Expiry,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save token"})
+		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to save token")
 		return
 	}
 
@@ -188,7 +190,7 @@ func CallbackHandler(c *gin.Context) {
 	c.Redirect(http.StatusFound, frontendUrl+"?token="+accessToken)
 
 	// Respon sukses
-	//c.JSON(http.StatusOK, gin.H{
+	//utils.ErrorHandler(c, http.StatusOK, gin.H{
 	//	"message":       "Login success",
 	//	"user":          user,
 	//	"access_token":  token.AccessToken,

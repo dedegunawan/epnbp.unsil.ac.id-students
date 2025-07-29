@@ -10,4 +10,6 @@ func RegisterAuthRoutes(r gin.IRoutes) {
 	r.GET("/sso-logout", controllers.SsoLogoutHandler)
 	r.POST("/login", controllers.LoginHandler)
 	r.GET("/callback", controllers.CallbackHandler)
+	r.GET("/payment-callback", controllers.PaymentCallbackHandler)
+	r.POST("/payment-callback", controllers.PaymentCallbackHandler)
 }

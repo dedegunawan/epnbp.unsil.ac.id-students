@@ -27,7 +27,7 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	if err := r.repo.DB.
 		Where("code = ?", mahasiswa.BIPOTID).
 		First(&template).Error; err != nil {
-		return fmt.Errorf("bill template not found for BIPOTID %d: %w", mahasiswa.BIPOTID, err)
+		return fmt.Errorf("bill template not found for BIPOTID %s: %w", mahasiswa.BIPOTID, err)
 	}
 
 	// Ambil semua item UKT yang cocok
