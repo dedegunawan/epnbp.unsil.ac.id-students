@@ -17,20 +17,23 @@ export const GenerateBills = () => {
 
     setLoading(true);
     try {
-      await api.post(
-          `/v1/student-bill`,
-          {},
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-      );
-      toast({
-        title: "Tagihan berhasil digenerate",
-        description: "Silakan cek daftar tagihan Anda.",
-      });
-      refresh(); // refresh data setelah generate
+        const response = await api.post(
+            "/v1/student-bill",
+            {},
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            }
+        );
+
+        // hanya dijalankan jika tidak error (tidak 500)
+        toast({
+            title: "Tagihan berhasil digenerate",
+            description: "Silakan cek daftar tagihan Anda.",
+        });
+
+        await refresh(); // Pastikan refresh hanya dijalankan kalau berhasil
     } catch (err) {
         let errorMessage = err?.response?.data?.error;
       console.error("Gagal generate tagihan:", err);
