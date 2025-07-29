@@ -32,10 +32,11 @@ export const GenerateBills = () => {
       });
       refresh(); // refresh data setelah generate
     } catch (err) {
+        let errorMessage = err?.response?.data?.error;
       console.error("Gagal generate tagihan:", err);
       toast({
         title: "Gagal generate tagihan",
-        description: "Silakan coba lagi nanti.",
+        description: "Silakan coba lagi nanti. " + errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -44,13 +45,23 @@ export const GenerateBills = () => {
   };
 
   return (
-      <div className="flex justify-end mb-4">
-        <div className="border p-4 rounded text-blue-600 border-blue-500 bg-blue-50">
-          <p className="text-sm font-medium">Anda belum membuat tagihan. Silahkan klik "Generate Tagihan"</p>
-        </div>
-        <Button onClick={handleGenerate} disabled={loading}>
-          {loading ? "Memproses..." : "Generate Tagihan"}
-        </Button>
+      <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 border border-blue-500 bg-blue-50 rounded-md">
+              <p className="text-sm text-blue-700">
+                  Anda belum membuat tagihan. Silakan klik tombol{" "}
+                  <span className="font-semibold">"Generate Tagihan"</span> untuk memulai.
+              </p>
+          </div>
+
+          <Button
+              onClick={handleGenerate}
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+          >
+              {loading ? "Memproses..." : "Generate Tagihan"}
+          </Button>
       </div>
+
+
   );
 };

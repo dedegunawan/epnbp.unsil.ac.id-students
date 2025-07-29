@@ -4,6 +4,17 @@ import { Button } from "@/components/ui/button";
 import { User, GraduationCap, Calendar, MapPin } from "lucide-react";
 import { useAuthToken } from "@/auth/auth-token-context.tsx";
 import { useEffect, useMemo } from "react";
+import {useStudentBills} from "@/bill/context.tsx";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+import localizedFormat from "dayjs/plugin/localizedFormat";
+import "dayjs/locale/id";
+
+dayjs.extend(utc); // <-- penting: harus sebelum timezone
+dayjs.extend(timezone);
+dayjs.extend(localizedFormat);
+dayjs.locale("id");
 
 interface Student {
   nim: string;
@@ -14,6 +25,9 @@ interface Student {
   tahunMasuk: string;
   email: string;
   status: string;
+  activeYear: string;
+  periodeMulai: string;
+  periodeSelesai: string;
 }
 
 
@@ -21,10 +35,15 @@ interface Student {
 
 export const StudentInfo = () => {
   const { profile, loadProfile, logout } = useAuthToken();
+  const {tahun} = useStudentBills();
 
   useEffect(() => {
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    console.log(tahun);
+  }, [tahun]);
 
   const studentData: Student = useMemo(() => {
     const m = profile?.mahasiswa;
@@ -36,9 +55,14 @@ export const StudentInfo = () => {
       semester: "-", // Anda bisa sesuaikan jika ada
       tahunMasuk: m?.parsed?.angkatan, // Ambil dari profile jika tersedia
       email: profile?.email, // Jika profile punya alamat
-      status: m?.parsed?.StatusMhswID
+      status: m?.parsed?.StatusMhswID,
+      activeYear: tahun?.description,
+      periodeMulai: tahun ? `${dayjs(tahun.startDate).tz("Asia/Jakarta").format("dddd, D MMMM YYYY [pukul] HH:mm [WIB]")}`
+          : "-",
+      periodeSelesai: tahun ? `${dayjs(tahun.endDate).tz("Asia/Jakarta").format("dddd, D MMMM YYYY [pukul] HH:mm [WIB]")}`
+          : "-",
     };
-  }, [profile]);
+  }, [profile, tahun]);
 
   return (
     <Card className="w-full">
@@ -83,6 +107,22 @@ export const StudentInfo = () => {
             <div>
               <p className="font-medium">Email</p>
               <p className="text-muted-foreground">{studentData.email}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Tahun Akademik</p>
+              <p className="text-muted-foreground">{studentData.activeYear}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Tanggal Bayar</p>
+              <p className="text-muted-foreground">{studentData.periodeMulai}</p>
+              <p className="text-muted-foreground">{studentData.periodeSelesai}</p>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {BrowserRouter, Routes, Route, Navigate} from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import ErrorPage from "./pages/ErrorPage";
 import AuthCallback from "@/auth/auth-callback.tsx";
 import {AuthTokenProvider} from "@/auth/auth-token-context.tsx";
 import { StudentBillProvider } from "@/bill/context.tsx";
@@ -36,6 +37,7 @@ const App = () => (
                         <Route path="/dashboard" element={<Navigate to="/" replace />} />
                     </Route>
 
+                    <Route path="/error" element={<ErrorPage />} />
                     <Route path="*" element={<NotFound />} />
                 </Routes>
             </BrowserRouter>

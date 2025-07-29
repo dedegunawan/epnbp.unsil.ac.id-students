@@ -20,6 +20,7 @@ export interface FinanceYear {
     startDate: string;
     endDate: string;
     isActive: boolean;
+    description: string;
     createdAt: string;
     updatedAt: string;
 }
