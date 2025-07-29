@@ -178,8 +178,4 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
         </CardContent>
       </Card>
   );
-
-  return <div>
-    Hallo
-  </div>
 };

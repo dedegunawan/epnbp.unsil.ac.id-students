@@ -2,6 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { History, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {useStudentBills} from "@/bill/context.tsx";
+import {useMemo} from "react";
 
 interface PaymentRecord {
   id: string;
@@ -70,6 +72,26 @@ const formatCurrency = (amount: number) => {
 };
 
 export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
+  const {
+    historyTagihan,
+  } = useStudentBills();
+
+  const paymentHistory: PaymentRecord[] = useMemo(() => {
+    if (typeof historyTagihan == 'undefined' || !historyTagihan || historyTagihan.length <= 0) return [];
+    return historyTagihan.map((data) => {
+      return {
+        id: data.ID,
+        jenis: data.Name,
+        semester: data.AcademicYear,
+        jumlah: data.Amount,
+        tanggalBayar: "#",
+        metodePembayaran: "#",
+        nomorReferensi: "#",
+        status: "Berhasil"
+      };
+    })
+  }, [historyTagihan])
+
   return (
     <Card className="w-full">
       <CardHeader className="pb-4">
@@ -78,10 +100,10 @@ export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
             <History className="h-5 w-5 text-primary" />
             Riwayat Pembayaran
           </CardTitle>
-          <Button variant="outline" size="sm" className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
+          {/*<Button variant="outline" size="sm" className="flex items-center gap-2">*/}
+          {/*  <Download className="h-4 w-4" />*/}
+          {/*  Export*/}
+          {/*</Button>*/}
         </div>
       </CardHeader>
       <CardContent>
@@ -108,21 +130,21 @@ export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
                   })}
                 </p>
               </div>
-              
+
               <div className="text-right">
                 <p className="text-lg font-bold text-foreground">{formatCurrency(payment.jumlah)}</p>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="mt-1 text-primary"
-                  onClick={() => onViewDetail?.(payment)}
-                >
-                  Lihat Detail
-                </Button>
+                {/*<Button*/}
+                {/*  variant="ghost"*/}
+                {/*  size="sm"*/}
+                {/*  className="mt-1 text-primary"*/}
+                {/*  onClick={() => onViewDetail?.(payment)}*/}
+                {/*>*/}
+                {/*  Lihat Detail*/}
+                {/*</Button>*/}
               </div>
             </div>
           ))}
-          
+
           {paymentHistory.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -130,7 +152,7 @@ export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
             </div>
           )}
         </div>
-        
+
         <div className="mt-6 pt-4 border-t border-border">
           <div className="flex justify-between items-center">
             <span className="font-medium">Total Pembayaran:</span>

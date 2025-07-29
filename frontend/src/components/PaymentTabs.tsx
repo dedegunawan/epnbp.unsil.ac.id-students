@@ -2,7 +2,8 @@ import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs.tsx
 import {GenerateBills} from "@/components/GenerateBills.tsx";
 import {SuccessBills} from "@/components/SuccessBills.tsx";
 import {LatestBills} from "@/components/LatestBills.tsx";
-import {PaymentHistory} from "@/components/PaymentHistoryNow.tsx";
+import {PaymentHistory} from "@/components/PaymentHistory";
+import {PaymentHistory as PaymentHistoryNow} from "@/components/PaymentHistoryNow";
 import {useState} from "react";
 import {useStudentBills} from "@/bill/context.tsx";
 
@@ -11,6 +12,7 @@ export const PaymentTabs = () => {
     const {
         isGenerated,
         isPaid,
+        historyTagihan,
     } = useStudentBills();
 
 
@@ -59,7 +61,10 @@ export const PaymentTabs = () => {
             </TabsContent>
 
             <TabsContent value="riwayat" className="mt-6">
-                <PaymentHistory onViewDetail={handleViewDetail} />
+                { historyTagihan && historyTagihan.length > 0 ? (
+                    <PaymentHistory onViewDetail={handleViewDetail} />
+                ) : <PaymentHistoryNow/>}
+
             </TabsContent>
         </Tabs>
     )
