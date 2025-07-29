@@ -3,7 +3,7 @@ version: '3.8'
 services:
   db:
     image: postgres:15
-    container_name: production-postgres
+    # container_name: production-postgres
     restart: always
     environment:
       POSTGRES_USER: dev_user
@@ -20,7 +20,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: ujian-backend-production
+    # container_name: ujian-backend-production
     restart: always
     depends_on:
       - db
@@ -28,6 +28,14 @@ services:
       - env/backend.env.production
     networks:
       - dev-network
+    
+    healthcheck:
+      test: curl -f http://localhost:8080 || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    ports:
+    - "127.0.0.1:3131:80"
     # ❌ Tidak diekspos ke luar
 
   frontend:
@@ -36,12 +44,17 @@ services:
       dockerfile: ./frontend/Dockerfile
       args:
         ENV_FILE: ./env/frontend.env.production
-    container_name: ujian-frontend-production
+    # container_name: ujian-frontend-production
     restart: always
     depends_on:
       - golang-backend
     env_file:
       - env/frontend.env.production
+    healthcheck:
+      test: curl -f http://localhost || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 3
     # ❌ Tidak diekspos ke luar
     networks:
       - dev-network
