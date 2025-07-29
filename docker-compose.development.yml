@@ -9,6 +9,15 @@ services:
       POSTGRES_USER: dev_user
       POSTGRES_PASSWORD: dev_pass
       POSTGRES_DB: dev_db
+      TZ: Asia/Jakarta
+    command:
+      [
+        "postgres",
+        "-c",
+        "timezone=Asia/Jakarta",
+        "-c",
+        "log_timezone=Asia/Jakarta"
+      ]
     ports:
       - "5432:5432"
     volumes:
@@ -79,6 +88,7 @@ services:
       KC_DB_DATABASE: keycloak
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
+      TZ: Asia/Jakarta
     networks:
       - dev-network
 
