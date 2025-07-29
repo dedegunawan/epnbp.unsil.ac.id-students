@@ -129,7 +129,7 @@ func GenerateCurrentBill(c *gin.Context) {
 	// Panggil repository untuk ambil FinanceYear aktif
 	activeYear, err := tagihanRepo.GetActiveFinanceYear()
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Tahun aktif tidak ditemukan"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
 	}
 
@@ -179,7 +179,7 @@ func GenerateUrlPembayaran(c *gin.Context) {
 	// Panggil repository untuk ambil FinanceYear aktif
 	activeYear, err := tagihanRepo.GetActiveFinanceYear()
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Tahun aktif tidak ditemukan"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
 	}
 
