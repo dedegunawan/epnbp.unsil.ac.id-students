@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"time"
 )
 
@@ -38,6 +39,7 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	}
 
 	if len(items) == 0 {
+		utils.Log.Info("Last query : ", `bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, mahasiswa.UKT, "0")
 		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", mahasiswa.UKT)
 	}
 
