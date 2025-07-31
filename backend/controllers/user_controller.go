@@ -1,13 +1,18 @@
 package controllers
 
 import (
+	"fmt"
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/services"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/gin-gonic/gin"
+	"io"
+	"math/rand"
 	"net/http"
+	"path/filepath"
+	"time"
 )
 
 func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
@@ -226,4 +231,88 @@ func GenerateUrlPembayaran(c *gin.Context) {
 	c.JSON(http.StatusOK, payUrl)
 	return
 
+}
+
+func ConfirmPembayaran(c *gin.Context) {
+	studentBillID := c.Param("StudentBillID")
+	if studentBillID == "" {
+		utils.Log.Info("StudentBillID not found ", studentBillID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "StudentBillID wajib diisi"})
+		return
+	}
+
+	// Ambil form input
+	vaNumber := c.PostForm("vaNumber")
+	paymentDate := c.PostForm("paymentDate")
+
+	if vaNumber == "" || paymentDate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nomor VA dan Tanggal Bayar wajib diisi"})
+		return
+	}
+
+	// Validasi student bill (opsional)
+	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	studentBill, err := tagihanRepo.FindStudentBillByID(studentBillID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tagihan tidak ditemukan"})
+		return
+	}
+
+	fileURL, ok := handleUpload(c, "file")
+	if !ok {
+		return
+	}
+
+	// Simpan ke database (opsional, sesuaikan dengan struktur Anda)
+	paymentConfirmation, err := services.NewTagihanSerice(tagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
+	if err != nil || paymentConfirmation == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan konfirmasi pembayaran"})
+		return
+	}
+
+	// Sukses
+	c.JSON(http.StatusOK, gin.H{
+		"message":             "Bukti bayar berhasil dikirim",
+		"studentBillID":       studentBill.ID,
+		"vaNumber":            vaNumber,
+		"paymentDate":         paymentDate,
+		"fileURL":             fileURL,
+		"paymentConfirmation": paymentConfirmation,
+	})
+}
+
+func handleUpload(c *gin.Context, filename string) (string, bool) {
+	// Ambil file dari form
+	fileHeader, err := c.FormFile(filename)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File bukti bayar wajib diunggah"})
+		return "", false
+	}
+
+	// Buka file dan baca kontennya sebagai []byte
+	file, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file"})
+		return "", false
+	}
+	defer file.Close()
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca isi file"})
+		return "", false
+	}
+
+	// Tentukan object name unik untuk penyimpanan di MinIO
+	ext := filepath.Ext(fileHeader.Filename)
+	objectName := fmt.Sprintf("bukti-bayar/%s-%d%s", time.Now().Format("20060102-150405"), rand.Intn(99999), ext)
+
+	// Upload ke MinIO
+	_, err = utils.UploadObjectToMinio(objectName, fileBytes, fileHeader.Header.Get("Content-Type"))
+	if err != nil {
+		utils.Log.Error("Gagal upload ke MinIO", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengunggah file ke storage"})
+		return "", false
+	}
+	return objectName, true
 }

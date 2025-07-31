@@ -94,6 +94,7 @@ type StudentBill struct {
 	Discounts          []StudentBillDiscount      `gorm:"foreignKey:StudentBillID"`
 	Installments       []StudentBillInstallment   `gorm:"foreignKey:StudentBillID"`
 	Postponements      []StudentBillPostponement  `gorm:"foreignKey:StudentBillID"`
+	Mahasiswa          *Mahasiswa                 `gorm:"foreignKey:MhswID"`
 }
 
 // Hitung total potongan dari relasi yang sudah diverifikasi

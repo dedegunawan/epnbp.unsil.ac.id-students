@@ -17,6 +17,16 @@ type PayUrl struct {
 	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
+type PaymentConfirmation struct {
+	ID            uint      `gorm:"primaryKey"`
+	StudentBillID uint      `gorm:"column:student_bill_id" json:"student_bill_id"`
+	VaNumber      string    `gorm:"column:va_number" json:"va_number"`
+	PaymentDate   string    `gorm:"column:payment_date" json:"payment_date"`
+	ObjectName    string    `gorm:"column:object_name" json:"object_name"`
+	Message       string    `gorm:"column:message;type:text" json:"message"`
+	CreatedAt     time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt     time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
 
 type PaymentCallback struct {
 	ID            uint           `gorm:"primaryKey" json:"id"`
@@ -27,6 +37,8 @@ type PaymentCallback struct {
 
 func MigrateEpnbp(db *gorm.DB) {
 	db.AutoMigrate(&PayUrl{},
+		&PaymentCallback{},
+		&PaymentConfirmation{},
 		&PaymentCallback{},
 	)
 }

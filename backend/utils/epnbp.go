@@ -17,6 +17,8 @@ type Epnbp interface {
 	CreateInvoice(payload map[string]interface{}) (map[string]interface{}, error)
 	GenerateJWTSecret() string
 	EncodePayloadToJWT(payload map[string]interface{}) (string, error)
+	SearchByInvoiceID(invoiceId string) (map[string]interface{}, error)
+	SearchByVirtualAccount(virtualAccount string) (map[string]interface{}, error)
 }
 
 type epnbp struct {
@@ -82,6 +84,74 @@ func (e *epnbp) CreateInvoice(payload map[string]interface{}) (map[string]interf
 		Log.Info(string(resp.Body()), " status code:", resp.StatusCode(), " url:", e.AppUrl+"api/invoices/create")
 		Log.Info("Response Body:", string(resp.Body()))
 		return nil, errors.New("gagal membuat invoice EPNBP")
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("gagal parsing respons: %w", err)
+	}
+
+	return result, nil
+}
+
+// Fungsi utama menggunakan Resty
+func (e *epnbp) SearchByInvoiceID(invoiceId string) (map[string]interface{}, error) {
+
+	// Gunakan Resty
+	client := resty.New()
+
+	client.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetHeader("Accept", "application/json").
+		SetHeader("x-app-id", e.AppId).
+		SetHeader("x-secret-key", e.SecretKey).
+		SetQueryParam("invoice_id", invoiceId).
+		Get(e.AppUrl + "/api/virtual-accounts/search-invoice")
+	if err != nil {
+		Log.Info("Error creating search invoice %v", err.Error())
+		return nil, fmt.Errorf("gagal mengirim request: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		Log.Info(string(resp.Body()), " status code:", resp.StatusCode(), " url:", e.AppUrl+"/api/virtual-accounts/search-invoice", "invoice_id", invoiceId)
+		Log.Info("Response Body:", string(resp.Body()))
+		return nil, errors.New("gagal membuat seach invoice EPNBP")
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("gagal parsing respons: %w", err)
+	}
+
+	return result, nil
+}
+
+// Fungsi utama menggunakan Resty
+func (e *epnbp) SearchByVirtualAccount(virtualAccount string) (map[string]interface{}, error) {
+
+	// Gunakan Resty
+	client := resty.New()
+
+	client.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetHeader("Accept", "application/json").
+		SetHeader("x-app-id", e.AppId).
+		SetHeader("x-secret-key", e.SecretKey).
+		SetQueryParam("va", virtualAccount).
+		Get(e.AppUrl + "/api/virtual-accounts/search-va")
+	if err != nil {
+		Log.Info("Error creating search virtual account %v", err.Error())
+		return nil, fmt.Errorf("gagal mengirim request: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		Log.Info(string(resp.Body()), " status code:", resp.StatusCode(), " url:", e.AppUrl+"/api/virtual-accounts/search-va")
+		Log.Info("Response Body:", string(resp.Body()))
+		return nil, errors.New("gagal membuat seach va EPNBP")
 	}
 
 	var result map[string]interface{}

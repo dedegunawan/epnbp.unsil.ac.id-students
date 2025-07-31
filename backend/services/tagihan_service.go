@@ -5,11 +5,13 @@ import (
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
+	"strconv"
 	"time"
 )
 
 type TagihanService interface {
 	CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error
+	SavePaymentConfirmation(studentBill models.StudentBill, vaNumber string, paymentDate string, objectName string) (*models.PaymentConfirmation, error)
 }
 
 type tagihanService struct {
@@ -62,4 +64,73 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	}
 
 	return nil
+}
+
+func (r *tagihanService) SavePaymentConfirmation(studentBill models.StudentBill, vaNumber string, paymentDate string, objectName string) (*models.PaymentConfirmation, error) {
+	paymentConfirmation := models.PaymentConfirmation{
+		StudentBillID: studentBill.ID,
+		VaNumber:      vaNumber,
+		PaymentDate:   paymentDate,
+		ObjectName:    objectName,
+		Message:       "",
+	}
+	r.repo.DB.Save(&paymentConfirmation)
+
+	// check all payment id is success or not
+	payUrls, err := r.repo.GetAllPayUrlByStudentBillID(studentBill.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	epnbpRepo := repositories.NewEpnbpRepository(r.repo.DB)
+	eService := NewEpnbpService(epnbpRepo)
+
+	var realPaymentDate *time.Time
+	isPaid := false
+	invoiceIds := []string{}
+	for _, payUrl := range payUrls {
+		invoiceId := strconv.FormatUint(uint64(payUrl.InvoiceID), 10)
+		isPaid, realPaymentDate = eService.CheckStatusPaidByInvoiceID(invoiceId)
+		invoiceIds = append(invoiceIds, invoiceId)
+		if isPaid {
+			break
+		}
+	}
+	if !isPaid {
+		isPaid, realPaymentDate = eService.CheckStatusPaidByVirtualAccount(vaNumber, invoiceIds)
+	}
+
+	if isPaid {
+		r.savePaidStudentBill(studentBill, studentBill.Amount, *realPaymentDate, vaNumber, objectName)
+		return &paymentConfirmation, nil
+	}
+
+	return nil, nil
+}
+
+func (r *tagihanService) savePaidStudentBill(studentBill models.StudentBill, amount int64, realPaymentDate time.Time, vaNumber string, objectName string) bool {
+	studentBill.PaidAmount = amount
+	r.repo.DB.Save(&studentBill)
+
+	studentPayment := models.StudentPayment{
+		StudentID:    string(studentBill.StudentID),
+		AcademicYear: studentBill.AcademicYear,
+		PaymentRef:   vaNumber,
+		Amount:       amount,
+		Bank:         "",
+		Method:       "VA",
+		Note:         objectName,
+		Date:         realPaymentDate,
+	}
+	r.repo.DB.Save(&studentPayment)
+
+	studentPaymentAllocation := models.StudentPaymentAllocation{
+		StudentPaymentID: studentPayment.ID,
+		StudentBillID:    studentBill.ID,
+		Amount:           amount,
+	}
+	r.repo.DB.Save(&studentPaymentAllocation)
+
+	return true
+
 }

@@ -13,6 +13,8 @@ import (
 
 type EpnbpService interface {
 	GenerateNewPayUrl(user models.User, mahasiswa models.Mahasiswa, studentBill models.StudentBill, financeYear models.FinanceYear) (*models.PayUrl, error)
+	CheckStatusPaidByInvoiceID(invoiceId string) (bool, *time.Time)
+	CheckStatusPaidByVirtualAccount(virtualAccount string, invoiceIds []string) (bool, *time.Time)
 }
 
 type epnbpService struct {
@@ -103,4 +105,83 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 	}
 
 	return &payUrl, nil
+}
+
+func (es epnbpService) CheckStatusPaidByInvoiceID(invoiceId string) (bool, *time.Time) {
+	utils.Log.Info("CheckStatusPaidByInvoiceID invoiceId: %s", invoiceId)
+	result, err := utils.NewEpnbp().SearchByInvoiceID(invoiceId)
+	if err != nil {
+		return false, nil
+	}
+	return es.isPaidInvoiceResult(result)
+}
+
+func (es *epnbpService) isPaidInvoiceResult(result map[string]interface{}) (bool, *time.Time) {
+	statusPaid := false
+	var realPaymentDate time.Time
+
+	// Jika belum paid dari invoice, cek virtual_accounts
+	if vas, ok := result["virtual_accounts"].([]interface{}); ok {
+		for _, va := range vas {
+			if vaMap, ok := va.(map[string]interface{}); ok {
+				if status, ok := vaMap["status"].(string); ok && status == "Paid" {
+					statusPaid = true
+					realPaymentDate, _ = time.Parse(time.DateTime, vaMap["tanggal_bayar"].(string))
+					break
+				}
+			}
+		}
+	}
+	return statusPaid, &realPaymentDate
+}
+
+func (es epnbpService) CheckStatusPaidByVirtualAccount(virtualAccount string, invoiceIDs []string) (bool, *time.Time) {
+	result, err := utils.NewEpnbp().SearchByVirtualAccount(virtualAccount)
+	if err != nil {
+		return false, nil
+	}
+	return es.isPaidVirtualAccountResult(result, invoiceIDs)
+}
+
+func (es *epnbpService) isPaidVirtualAccountResult(result map[string]interface{}, invoiceIDs []string) (bool, *time.Time) {
+	// Cek apakah ada virtual_accounts di dalam result
+	virtualAccounts, ok := result["virtual_accounts"].([]interface{})
+	if !ok {
+		return false, nil
+	}
+
+	for _, va := range virtualAccounts {
+		vaMap, ok := va.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Ambil status dan invoice_id
+		status, statusOk := vaMap["status"].(string)
+		invoiceID, invoiceIDOk := vaMap["invoice_id"].(string)
+		realPaymentDateString, _ := vaMap["tanggal_bayar"].(string)
+
+		realPaymentDate, _ := time.Parse(time.DateTime, realPaymentDateString)
+
+		if !statusOk || !invoiceIDOk {
+			continue
+		}
+
+		// Jika status = "Paid" dan invoiceID ada dalam daftar
+		if status == "Paid" && containsString(invoiceIDs, invoiceID) {
+			return true, &realPaymentDate
+		}
+	}
+
+	return false, nil
+}
+
+// Helper: cek apakah slice string mengandung item
+func containsString(slice []string, val string) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
 }

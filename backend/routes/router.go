@@ -18,9 +18,6 @@ func SetupRouter() *gin.Engine {
 		return
 	})
 
-	r.GET("/payment-callback", controllers.PaymentCallbackHandler)
-	r.POST("/payment-callback", controllers.PaymentCallbackHandler)
-
 	auth.InitOIDC()
 
 	RegisterAuthRoutes(r)
@@ -31,6 +28,10 @@ func SetupRouter() *gin.Engine {
 		v1.GET("/student-bill", middleware.RequireAuthFromTokenDB(), controllers.GetStudentBillStatus)
 		v1.POST("/student-bill", middleware.RequireAuthFromTokenDB(), controllers.GenerateCurrentBill)
 		v1.GET("/generate/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.GenerateUrlPembayaran)
+		v1.POST("/confirm-payment/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.ConfirmPembayaran)
+
+		r.GET("/payment-callback", controllers.PaymentCallbackHandler)
+		r.POST("/payment-callback", controllers.PaymentCallbackHandler)
 	}
 	RegisterAdministrator(v1)
 
