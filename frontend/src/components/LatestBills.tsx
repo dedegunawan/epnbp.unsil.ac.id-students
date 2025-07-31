@@ -79,6 +79,8 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
 
   const { token } = useAuthToken();
 
+  const { refresh } = useStudentBills()
+
   const showConfirmPay = useCallback(async (studentBill) => {
     setIsOpen(true);
     setCurrentBill(studentBill);
@@ -86,6 +88,7 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
 
   const onCloseModal =   () => {
     setIsOpen(false);
+    refresh();
   };
 
   const getUrlPembayaran = useCallback(async (studentBillID) => {
