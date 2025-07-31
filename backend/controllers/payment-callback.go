@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"net/http"
 )
 
 func PaymentCallbackHandler(c *gin.Context) {
+	utils.Log.Info("PaymentCallbackHandler")
 	// === 1. Ambil Header ===
 	headers := make(map[string]string)
 	for k, v := range c.Request.Header {
