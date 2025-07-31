@@ -78,10 +78,6 @@ export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
             <History className="h-5 w-5 text-primary" />
             Riwayat Pembayaran
           </CardTitle>
-          {/*<Button variant="outline" size="sm" className="flex items-center gap-2">*/}
-          {/*  <Download className="h-4 w-4" />*/}
-          {/*  Export*/}
-          {/*</Button>*/}
         </div>
       </CardHeader>
       <CardContent>

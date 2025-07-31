@@ -3,9 +3,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Receipt, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import {StudentBillResponse, useStudentBills} from "@/bill/context.tsx";
-import {useCallback} from "react";
+import {useCallback, useState} from "react";
 import axios from "axios";
 import {useAuthToken} from "@/auth/auth-token-context.tsx";
+import { ConfirmPayment } from '@/components/ConfirmPayment.tsx'
 import api from "@/lib/axios.ts";
 
 export interface StudentBill {
@@ -72,7 +73,20 @@ const getStatusVariant = (status: string) => {
 export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
   const { tagihanHarusDibayar } = useStudentBills();
 
+  const [ isOpen, setIsOpen ] = useState(false);
+
+  const [ currentBill, setCurrentBill ] = useState<StudentBill>();
+
   const { token } = useAuthToken();
+
+  const showConfirmPay = useCallback(async (studentBill) => {
+    setIsOpen(true);
+    setCurrentBill(studentBill);
+  }, [token])
+
+  const onCloseModal =   () => {
+    setIsOpen(false);
+  };
 
   const getUrlPembayaran = useCallback(async (studentBillID) => {
     if (!token) return;
@@ -127,6 +141,8 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
           </CardTitle>
         </CardHeader>
 
+        <ConfirmPayment isOpen={isOpen} studentBill={currentBill} onClose={onCloseModal} />
+
         <CardContent className="space-y-6">
           {tagihanHarusDibayar.map((bill) => {
             const status = getStatus(bill);
@@ -163,6 +179,12 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
                       Dibuat pada: {new Date(bill.CreatedAt).toLocaleDateString("id-ID")}
                     </p>
                   </div>
+
+                  {status === "Belum Bayar" && (
+                      <Button className="ml-4" onClick={() => showConfirmPay(bill)}>
+                        Saya Sudah Bayar
+                      </Button>
+                  )}
 
                   {status === "Belum Bayar" && (
                       <Button className="ml-4" onClick={() => getUrlPembayaran(bill.ID)}>
