@@ -3,7 +3,6 @@ version: '3.8'
 services:
   db:
     image: postgres:15
-    # container_name: production-postgres
     restart: always
     environment:
       POSTGRES_USER: dev_user
@@ -15,12 +14,15 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - dev-network
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
 
   golang-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    # container_name: ujian-backend-production
     restart: always
     depends_on:
       - db
@@ -28,13 +30,18 @@ services:
       - env/backend.env.production
     networks:
       - dev-network
-    
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
-      test: curl -f http://localhost:8080 || exit 1
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 10s
       timeout: 3s
       retries: 3
-    # ❌ Tidak diekspos ke luar
+    # Jika backend perlu ekspos port untuk debug, uncomment:
+    # ports:
+    #   - "8080:8080"
 
   frontend:
     build:
@@ -42,22 +49,24 @@ services:
       dockerfile: ./frontend/Dockerfile
       args:
         ENV_FILE: ./env/frontend.env.production
-    # container_name: ujian-frontend-production
     restart: always
     depends_on:
       - golang-backend
     env_file:
       - env/frontend.env.production
     healthcheck:
-      test: curl -f http://localhost || exit 1
+      test: ["CMD", "curl", "-f", "http://localhost"]
       interval: 10s
       timeout: 3s
       retries: 3
-    # ❌ Tidak diekspos ke luar
     ports:
-    - "127.0.0.1:3131:80"
+      - "127.0.0.1:3131:80"
     networks:
       - dev-network
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
 
 volumes:
   pgdata:
