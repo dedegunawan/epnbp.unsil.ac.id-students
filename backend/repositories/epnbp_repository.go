@@ -10,6 +10,7 @@ import (
 type EpnbpRepository interface {
 	GetDB() *gorm.DB
 	FindNotExpiredByStudentBill(studentBillID string) (*models.PayUrl, error)
+	FindByInvoiceId(invoiceID string) (*models.PayUrl, error)
 }
 
 type epnbpRepository struct {
@@ -31,6 +32,20 @@ func (er *epnbpRepository) FindNotExpiredByStudentBill(studentBillID string) (*m
 		Where("student_bill_id = ?", studentBillID).
 		Where("expired_at IS NULL OR expired_at > ?", time.Now()).
 		Order("expired_at ASC").
+		First(&payUrl).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &payUrl, nil
+}
+
+func (er *epnbpRepository) FindByInvoiceId(invoiceID string) (*models.PayUrl, error) {
+	var payUrl models.PayUrl
+
+	err := er.DB.
+		Where("invoice_id = ?", invoiceID).
 		First(&payUrl).Error
 
 	if err != nil {

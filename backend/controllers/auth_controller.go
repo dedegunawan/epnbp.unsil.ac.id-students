@@ -19,7 +19,10 @@ import (
 )
 
 func SsoLoginHandler(c *gin.Context) {
-	authCodeURL := auth.OAuth2Config.AuthCodeURL("state-value", oauth2.AccessTypeOffline)
+	backTo := c.Query("backTo") // contoh: "/dashboard"
+	state := utils.EncodeBackState(backTo)
+
+	authCodeURL := auth.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	c.Redirect(http.StatusTemporaryRedirect, authCodeURL)
 }
 
@@ -111,6 +114,8 @@ func RefreshHandler(c *gin.Context) {
 func CallbackHandler(c *gin.Context) {
 	ctx := context.Background()
 	code := c.Query("code")
+
+	_, err := utils.DecodeBackState(c.Query("state"))
 
 	if code == "" {
 		utils.ErrorHandler(c, http.StatusBadRequest, "No code provided")

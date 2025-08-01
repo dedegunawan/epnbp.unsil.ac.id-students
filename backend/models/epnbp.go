@@ -31,8 +31,15 @@ type PaymentConfirmation struct {
 type PaymentCallback struct {
 	ID            uint           `gorm:"primaryKey" json:"id"`
 	StudentBillID *uint          `gorm:"column:student_bill_id" json:"student_bill_id"`
-	Request       datatypes.JSON `gorm:"type:json" json:"request"`  // seluruh isi request (body, header, url, dsb)
-	Response      datatypes.JSON `gorm:"type:json" json:"response"` // response kita ke provider
+	Status        string         `gorm:"column:status" json:"status"`
+	TryCount      uint           `gorm:"column:try_count;default:0" json:"try_count"`
+	Request       datatypes.JSON `gorm:"type:json" json:"request"`       // seluruh isi request (body, header, url, dsb)
+	Response      datatypes.JSON `gorm:"type:json" json:"response"`      // response kita ke provider
+	ResponseFrom  datatypes.JSON `gorm:"type:json" json:"response_from"` // response dari callback
+	LastError     string         `gorm:"column:last_error;type:text" json:"last_error"`
+	CreatedAt     time.Time      `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at" json:"updated_at"`
+	LastUpdatedAt time.Time      `gorm:"column:last_updated_at" json:"last_updated_at"`
 }
 
 func MigrateEpnbp(db *gorm.DB) {

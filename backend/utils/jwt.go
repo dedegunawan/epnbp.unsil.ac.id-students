@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -55,5 +56,46 @@ func CheckJwt(tokenStr string) (*Claims, error) {
 		return nil, errors.New("token expired")
 	}
 
+	return claims, nil
+}
+func CheckJwtBySecret(tokenStr string, secret []byte, timeValidation bool) (map[string]interface{}, error) {
+	// Gunakan jwt.MapClaims agar bisa fleksibel
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		// Pastikan algoritma yang digunakan adalah HMAC
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return secret, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Ambil dan validasi claims sebagai MapClaims
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token claims")
+	}
+
+	// Validasi waktu expire jika diperlukan
+	if timeValidation {
+		if expRaw, ok := claims["exp"]; ok {
+			switch exp := expRaw.(type) {
+			case float64:
+				if int64(exp) < time.Now().Unix() {
+					return nil, errors.New("token expired")
+				}
+			case json.Number:
+				// jika token dari sumber lain kadang exp disimpan sebagai json.Number
+				expInt, _ := exp.Int64()
+				if expInt < time.Now().Unix() {
+					return nil, errors.New("token expired")
+				}
+			}
+		}
+	}
+
+	// Kembalikan claims sebagai map[string]interface{}
 	return claims, nil
 }

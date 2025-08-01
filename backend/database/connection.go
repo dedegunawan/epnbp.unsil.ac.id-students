@@ -40,6 +40,8 @@ func ConnectDatabase() {
 
 	models.MigrateTagihan(db)
 	models.MigrateEpnbp(db)
+	models.MigrateBackState(db)
+	models.MigrateJob(db)
 
 	DB = db
 }
