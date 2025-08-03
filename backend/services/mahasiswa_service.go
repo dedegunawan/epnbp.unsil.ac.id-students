@@ -94,6 +94,11 @@ type SimakProdiResponse struct {
 }
 
 func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
+	mhsw, err := s.GetByMhswID(mhswID)
+	if err == nil && mhsw != nil {
+		return nil
+	}
+
 	appID := os.Getenv("SIMAK_APP_ID")
 	appKey := os.Getenv("SIMAK_APP_KEY")
 

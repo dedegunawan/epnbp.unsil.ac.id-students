@@ -15,12 +15,13 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 )
 
 type Sintesys interface {
-	SendCallback(npm, tahun_id string, max_sks int) error
+	SendCallback(npm, tahun_id string, ukt string) error
 	ScanNewCallback()
 }
 
@@ -29,11 +30,11 @@ type sintesys struct {
 	Token  string
 }
 
-func NewSintesys(appUrl string, token string) Sintesys {
-	return &sintesys{AppUrl: appUrl, Token: token}
+func NewSintesys() Sintesys {
+	return &sintesys{AppUrl: os.Getenv("SINTESYS_CALLBACK_URL"), Token: os.Getenv("SINTESYS_TOKEN")}
 }
 
-func (s *sintesys) SendCallback(npm, tahun_id string, max_sks int) error {
+func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 	// Gunakan Resty
 	client := resty.New()
 
@@ -42,7 +43,7 @@ func (s *sintesys) SendCallback(npm, tahun_id string, max_sks int) error {
 	values := url.Values{}
 	values.Set("npm", npm)
 	values.Set("tahun_id", tahun_id)
-	if max_sks > 0 {
+	if max_sks, isCapped := utils.MaxSKSFromUkt(ukt); isCapped {
 		values.Set("max_sks", strconv.Itoa(max_sks))
 	}
 

@@ -29,6 +29,7 @@ func SetupRouter() *gin.Engine {
 		v1.POST("/student-bill", middleware.RequireAuthFromTokenDB(), controllers.GenerateCurrentBill)
 		v1.GET("/generate/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.GenerateUrlPembayaran)
 		v1.POST("/confirm-payment/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.ConfirmPembayaran)
+		v1.GET("/back-to-sintesys", middleware.RequireAuthFromTokenDB(), controllers.BackToSintesys)
 
 		v1.GET("/payment-callback", controllers.PaymentCallbackHandler)
 		v1.POST("/payment-callback", controllers.PaymentCallbackHandler)

@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -315,4 +316,65 @@ func handleUpload(c *gin.Context, filename string) (string, bool) {
 		return "", false
 	}
 	return objectName, true
+}
+
+func BackToSintesys(c *gin.Context) {
+	_, mahasiswa, isError := getMahasiswa(c)
+	if isError {
+		RedirectSintesys(c)
+		return
+	}
+
+	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	year, err := tagihanRepo.GetActiveFinanceYear()
+
+	if err != nil {
+		RedirectSintesys(c)
+		return
+	}
+
+	if mahasiswa.UKT == "0" {
+		hitAndBack(c, mahasiswa.MhswID, year.AcademicYear, mahasiswa.UKT)
+		return
+	}
+
+	studentBills, err := tagihanRepo.GetStudentBills(mahasiswa.MhswID, year.AcademicYear)
+
+	if err != nil {
+		RedirectSintesys(c)
+		return
+	}
+
+	isPaid := false
+	for _, studentBill := range studentBills {
+		if studentBill.PaidAmount > studentBill.Amount {
+			isPaid = true
+		}
+	}
+	if isPaid {
+		hitAndBack(c, mahasiswa.MhswID, year.AcademicYear, mahasiswa.UKT)
+		return
+	}
+
+	RedirectSintesys(c)
+	return
+
+}
+
+func hitAndBack(c *gin.Context, studentId string, academicYear string, ukt string) {
+	sintesysService := services.NewSintesys()
+	sintesysService.SendCallback(studentId, academicYear, ukt)
+	RedirectSintesys(c)
+	return
+}
+
+func RedirectSintesys(c *gin.Context) {
+	backUrl := os.Getenv("SINTESYS_URL")
+	if backUrl == "" {
+		backUrl = "http://sintesys.unsil.ac.id"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"url": backUrl,
+	})
+	return
 }
