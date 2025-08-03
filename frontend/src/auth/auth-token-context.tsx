@@ -21,6 +21,7 @@ interface Prodi {
     nama_prodi: string;
     fakultas_id: number;
     fakultas: Fakultas;
+    kel_ukt: string;
 }
 
 interface ParsedFullData {
@@ -38,6 +39,7 @@ interface Mahasiswa {
     email: string;
     prodi_id: number;
     full_data: string;
+    kel_ukt: string;
     parsed: ParsedFullData;
     prodi: Prodi;
 }

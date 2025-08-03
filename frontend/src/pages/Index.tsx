@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { StudentInfo } from "@/components/StudentInfo";
 import { PaymentTabs } from "@/components/PaymentTabs";
+import {FormKipk} from "@/components/FormKipk";
 import { VirtualAccountModal } from "@/components/VirtualAccountModal";
 import { PaymentDetailModal } from "@/components/PaymentDetailModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GraduationCap } from "lucide-react";
 import { useStudentBills } from '@/bill/context';
+import {useAuthToken} from "@/auth/auth-token-context.tsx";
 
 const Index = () => {
+
+  const { profile } = useAuthToken();
+  const kel_ukt = profile?.mahasiswa?.kel_ukt;
 
   return (
     <div className="min-h-screen bg-background">
@@ -33,7 +38,7 @@ const Index = () => {
           <StudentInfo />
 
           {/* Tabs for different sections */}
-          <PaymentTabs/>
+          {kel_ukt === "0" ? <FormKipk/> : <PaymentTabs/>}
         </div>
       </main>
     </div>

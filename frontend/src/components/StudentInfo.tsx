@@ -3,13 +3,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { User, GraduationCap, Calendar, MapPin, Mail } from "lucide-react";
 import { useAuthToken } from "@/auth/auth-token-context.tsx";
-import { useEffect, useMemo } from "react";
-import {useStudentBills} from "@/bill/context.tsx";
+import {useEffect, useMemo, useState} from "react";
+import {StudentBillResponse, useStudentBills} from "@/bill/context.tsx";
+import axios, {api} from '@/lib/axios'
+
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import localizedFormat from "dayjs/plugin/localizedFormat";
 import "dayjs/locale/id";
+import {useToast} from "@/hooks/use-toast.ts";
 
 dayjs.extend(utc); // <-- penting: harus sebelum timezone
 dayjs.extend(timezone);
@@ -34,8 +37,10 @@ interface Student {
 
 
 export const StudentInfo = () => {
-  const { profile, loadProfile, logout } = useAuthToken();
+  const { profile, loadProfile, logout, token } = useAuthToken();
   const {tahun} = useStudentBills();
+  const [ loading, setLoading ] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadProfile();
@@ -45,12 +50,43 @@ export const StudentInfo = () => {
     console.log(tahun);
   }, [tahun]);
 
+
+  const backToSintesys = async () => {
+
+    try {
+      setLoading(true);
+
+      const res = await axios.get(
+          `/v1/back-to-sintesys`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+      );
+      if (res.status === 200 && res.data && res.data.url) {
+        window.location.href = res.data.url;
+      } else {
+        throw new Error("Gagal memuat URL redirect");
+      }
+      toast({
+        title: "Redirect",
+        description: `Halaman akan diarahkaan ke Sintesys`,
+      });
+    } catch (error) {
+      window.location.href = "https://sintesys.unsil.ac.id/"
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const studentData: Student = useMemo(() => {
     const m = profile?.mahasiswa;
     return {
       nim: m?.mhsw_id ?? "-",
       nama: m?.nama ?? profile?.name ?? "-",
       fakultas: m?.prodi?.fakultas?.nama_fakultas ?? "-",
+      kel_ukt: m?.kel_ukt ?? "-",
       jurusan: m?.prodi?.nama_prodi ?? "-",
       semester: "-", // Anda bisa sesuaikan jika ada
       tahunMasuk: m?.parsed?.angkatan, // Ambil dari profile jika tersedia
@@ -129,6 +165,9 @@ export const StudentInfo = () => {
 
         {/* Tombol Logout di bagian bawah */}
         <div className="pt-4 border-t mt-4 flex justify-end">
+          <Button variant="default" onClick={backToSintesys} className="mr-2" disabled={loading}>
+            Kembali ke Sintesys
+          </Button>
           <Button variant="destructive" onClick={logout}>
             Logout
           </Button>
