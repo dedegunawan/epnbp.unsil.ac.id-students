@@ -144,7 +144,6 @@ func GenerateCurrentBill(c *gin.Context) {
 			return
 		}
 	}
-	return
 
 	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
 
