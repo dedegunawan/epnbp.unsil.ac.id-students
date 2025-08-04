@@ -157,6 +157,7 @@ type StudentPaymentAllocation struct {
 	StudentBillID    uint  `gorm:"index"`
 	Amount           int64 `gorm:"default:0"`
 	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type StudentUktHistory struct {
