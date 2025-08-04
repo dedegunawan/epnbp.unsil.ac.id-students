@@ -56,8 +56,9 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 		SetHeader("Content-Type", "application/x-www-form-urlencoded").
 		SetHeader("Accept", "application/json").
 		SetHeader("Authorization", "Bearer "+s.Token).
-		SetBody(formBody).
+		SetFormData(formBody).
 		Post(s.AppUrl)
+
 	if err != nil {
 		utils.Log.Info("Error on send callback %v", err.Error())
 		return fmt.Errorf("gagal mengirim request: %w", err)

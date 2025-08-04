@@ -320,6 +320,7 @@ func handleUpload(c *gin.Context, filename string) (string, bool) {
 
 func BackToSintesys(c *gin.Context) {
 	_, mahasiswa, isError := getMahasiswa(c)
+
 	if isError {
 		RedirectSintesys(c)
 		return
