@@ -59,7 +59,7 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 		SetFormData(formBody).
 		Post(s.AppUrl)
 
-	utils.Log.Info("Sintesys SendCallback", "resp", resp)
+	utils.Log.Info("Sintesys SendCallback", "npm : ", npm, " : ", resp)
 
 	if err != nil {
 		utils.Log.Info("Error on send callback %v", err.Error())
