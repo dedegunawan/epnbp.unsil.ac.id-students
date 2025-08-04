@@ -61,6 +61,14 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 
 	utils.Log.Info("Sintesys SendCallback", "npm : ", npm, " : ", resp)
 
+	encodedData, _ := json.Marshal(formBody)
+	encodedResponse, _ := json.Marshal(resp)
+	database.DB.Create(&models.SintesysCallback{
+		Url:      s.AppUrl,
+		Data:     string(encodedData),
+		Response: string(encodedResponse),
+	})
+
 	if err != nil {
 		utils.Log.Info("Error on send callback %v", err.Error())
 		return fmt.Errorf("gagal mengirim request: %w", err)

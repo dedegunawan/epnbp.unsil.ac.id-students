@@ -42,6 +42,7 @@ func ConnectDatabase() {
 	models.MigrateEpnbp(db)
 	models.MigrateBackState(db)
 	models.MigrateJob(db)
+	models.MigrateSintesys(db)
 
 	DB = db
 }
