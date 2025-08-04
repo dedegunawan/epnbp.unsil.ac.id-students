@@ -44,6 +44,8 @@ type BillTemplateItem struct {
 	Amount         int64  `gorm:"default:0"`
 	UKT            string `gorm:"size:255"`
 	BIPOTNamaID    string `gorm:"column:BIPOTNamaID;size:255"`
+	MulaiSesi      int64  `gorm:"default:0"`
+	KaliSesi       int64  `gorm:"default:0"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

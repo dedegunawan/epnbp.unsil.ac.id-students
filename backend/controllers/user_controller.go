@@ -138,6 +138,14 @@ func GenerateCurrentBill(c *gin.Context) {
 
 	mhswID := mahasiswa.MhswID
 
+	if len(mhswID) >= 3 {
+		if mhswID[2] == '8' || mhswID[2] == '9' {
+			GenerateCurrentBillPascasarjana(c, *mahasiswa)
+			return
+		}
+	}
+	return
+
 	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
 
 	// Panggil repository untuk ambil FinanceYear aktif
@@ -169,6 +177,49 @@ func GenerateCurrentBill(c *gin.Context) {
 
 	if len(tagihan) == 0 {
 		if err := tagihanService.CreateNewTagihan(mahasiswa, activeYear); err != nil {
+			utils.Log.Info("Gagal membuat tagihan", "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "OK"})
+}
+
+func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa) {
+	utils.Log.Info("GenerateCurrentBillPascasarjana")
+	mhswID := mahasiswa.MhswID
+	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+
+	// Panggil repository untuk ambil FinanceYear aktif
+	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
+		return
+	}
+
+	full_data := mahasiswa.ParseFullData()
+	statusMhswID, ok := full_data["StatusMhswID"].(string)
+	if !ok || statusMhswID == "" {
+		statusMhswID = "-"
+	}
+	// Panggil repository untuk ambil FinanceYear aktif
+	if statusMhswID != "A" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
+		return
+	}
+
+	// Panggil repository untuk ambil tagihan mahasiswa
+	tagihan, err := tagihanRepo.GetStudentBills(mhswID, activeYear.AcademicYear)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
+		return
+	}
+
+	tagihanService := services.NewTagihanSerice(tagihanRepo)
+
+	if len(tagihan) == 0 {
+		if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
 			utils.Log.Info("Gagal membuat tagihan", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
 			return
