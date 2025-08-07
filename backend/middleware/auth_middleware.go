@@ -58,7 +58,7 @@ func RequireAuthFromTokenDB() gin.HandlerFunc {
 		c.Set("sso_id", claims.Sub)
 		c.Set("email", claims.Email)
 		c.Set("name", claims.Name)
-
+		
 		c.Next()
 	}
 }

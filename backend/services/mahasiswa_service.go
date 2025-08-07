@@ -130,8 +130,6 @@ func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 		return fmt.Errorf("gagal decode mahasiswa: %w", err)
 	}
 
-	utils.Log.Info("mahasiswa data : ", mahasiswaData)
-
 	// 2. Ambil data prodi
 	prodiResp, err := client.R().
 		SetHeader("Accept", "application/json").
@@ -180,8 +178,6 @@ func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 	if err != nil {
 		return fmt.Errorf("gagal insert prodi: %w", err)
 	}
-
-	utils.Log.Info(fakultas)
 
 	// 2. Update isi prodi (pastikan prodi.ID sudah terisi)
 	err = db.Model(&prodi).Updates(models.Prodi{

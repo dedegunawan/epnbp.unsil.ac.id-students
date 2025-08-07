@@ -192,6 +192,8 @@ func CallbackHandler(c *gin.Context) {
 
 	frontendUrl := os.Getenv("FRONTEND_URL")
 	accessToken := token.AccessToken
+
+	utils.Log.Info("Redirect URL:", frontendUrl+"?token="+accessToken)
 	c.Redirect(http.StatusFound, frontendUrl+"?token="+accessToken)
 
 	// Respon sukses

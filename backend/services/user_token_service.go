@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/dedegunawan/backend-ujian-telp-v5/config"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"time"
@@ -26,6 +27,8 @@ func (s *UserTokenService) SaveUserToken(userID uuid.UUID, accessToken, refreshT
 		ExpiresAt:    expiresAt,
 		CreatedAt:    time.Now(),
 	}
+	json_, err := json.Marshal(&token)
+	utils.Log.Info(userID, "json token : ", string(json_), err)
 	return s.Repo.Create(token)
 }
 

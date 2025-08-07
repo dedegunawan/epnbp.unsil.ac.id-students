@@ -19,15 +19,19 @@ import (
 func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
 	userRepo := repositories.UserRepository{DB: database.DB}
 	ssoID := c.GetString("sso_id")
+	utils.Log.Info("mahasiswa", "email", ssoID)
 	user, err := userRepo.FindBySSOID(ssoID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return nil, nil, true
 	}
+	utils.Log.Info("mahasiswa", "email")
 
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
 	email := user.Email
 	mahasiswa, _ := mahasiswaRepo.FindByEmailPattern(email)
+
+	utils.Log.Info("mahasiswa", "email", email, mahasiswa)
 
 	return user, mahasiswa, false
 }
@@ -130,6 +134,29 @@ func GetStudentBillStatus(c *gin.Context) {
 }
 
 // POST /student-bill
+func RegenerateCurrentBill(c *gin.Context) {
+	_, mahasiswa, mustreturn := getMahasiswa(c)
+	if mustreturn {
+		return
+	}
+
+	mhswID := mahasiswa.MhswID
+	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+
+	// Panggil repository untuk ambil FinanceYear aktif
+	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
+		return
+	}
+
+	err = tagihanRepo.DeleteUnpaidBills(mhswID, activeYear.AcademicYear)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
+		return
+	}
+	GenerateCurrentBill(c)
+}
 func GenerateCurrentBill(c *gin.Context) {
 	_, mahasiswa, mustreturn := getMahasiswa(c)
 	if mustreturn {
@@ -316,7 +343,7 @@ func ConfirmPembayaran(c *gin.Context) {
 
 	// Simpan ke database (opsional, sesuaikan dengan struktur Anda)
 	paymentConfirmation, err := services.NewTagihanSerice(tagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
-	if err != nil || paymentConfirmation == nil {
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan konfirmasi pembayaran"})
 		return
 	}

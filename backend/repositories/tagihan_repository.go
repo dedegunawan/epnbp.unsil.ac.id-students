@@ -49,6 +49,14 @@ func (r *TagihanRepository) GetAllUnpaidBillsExcept(studentID string, academicYe
 }
 
 // Ambil tagihan mahasiswa berdasarkan student_id & academic_year
+func (r *TagihanRepository) DeleteUnpaidBills(studentID string, academicYear string) error {
+	err := r.DB.
+		Where("student_id = ? AND academic_year = ? and paid_amount = 0 ", studentID, academicYear).
+		Delete(&models.StudentBill{}).Error
+	return err
+}
+
+// Ambil tagihan mahasiswa berdasarkan student_id & academic_year
 func (r *TagihanRepository) GetAllPayUrlByStudentBillID(studentBillID uint) ([]models.PayUrl, error) {
 	var payUrls []models.PayUrl
 	err := r.DB.
