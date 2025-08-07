@@ -38,7 +38,7 @@ interface Student {
 
 export const StudentInfo = () => {
   const { profile, loadProfile, logout, token } = useAuthToken();
-  const {tahun} = useStudentBills();
+  const {tahun, refresh} = useStudentBills();
   const [ loading, setLoading ] = useState(false);
   const { toast } = useToast();
 
@@ -56,7 +56,7 @@ export const StudentInfo = () => {
     try {
       setLoading(true);
 
-      const res = await axios.get(
+      const res = await api.get(
           `/v1/back-to-sintesys`,
           {
             headers: {
@@ -75,6 +75,41 @@ export const StudentInfo = () => {
       });
     } catch (error) {
       window.location.href = "https://sintesys.unsil.ac.id/"
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
+
+  const perbaikiTagihan = async () => {
+
+    try {
+      setLoading(true);
+
+      const res = await api.post(
+          `/v1/regenerate-student-bill`, [],
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+      );
+      if (res.status === 200 && res.data) {
+        toast({
+          title: "Perbaikan Tagihan",
+          description: `Perbaikan tagihan berhasil`,
+        });
+        refresh();
+        //window.location.reload();
+      } else {
+        throw new Error("Memperbaiki tagihan gagal.");
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: `Memperbaiki tagihan gagal.`,
+      });
     } finally {
       setLoading(false);
     }
@@ -167,6 +202,9 @@ export const StudentInfo = () => {
         <div className="pt-4 border-t mt-4 flex justify-end">
           <Button variant="default" onClick={backToSintesys} className="mr-2" disabled={loading}>
             Kembali ke Sintesys
+          </Button>
+          <Button variant="default" onClick={perbaikiTagihan} className="mr-2" disabled={loading}>
+            Perbaiki Tagihan
           </Button>
           <Button variant="destructive" onClick={logout}>
             Logout
