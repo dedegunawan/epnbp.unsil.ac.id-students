@@ -78,18 +78,21 @@ func GetStudentBillStatus(c *gin.Context) {
 		return
 	}
 
-	// Panggil repository untuk ambil tagihan mahasiswa
+	// ambil tagihan mahasiswa semester sekarang
 	tagihan, err := tagihanRepo.GetStudentBills(mhswID, activeYear.AcademicYear)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
 		return
 	}
 
+	// ambil tagihan yang semester sebelumnya belum dibayar
 	unpaidTagihan, err := tagihanRepo.GetAllUnpaidBillsExcept(mhswID, activeYear.AcademicYear)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
 		return
 	}
+
+	// ambil tagihan semester sebelumnya yang sudah dibayar
 	paidTagihan, err := tagihanRepo.GetAllPaidBillsExcept(mhswID, activeYear.AcademicYear)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
@@ -113,6 +116,7 @@ func GetStudentBillStatus(c *gin.Context) {
 	for _, t := range unpaidTagihan {
 		tagihanHarusDibayar = append(tagihanHarusDibayar, t)
 	}
+
 	for _, t := range paidTagihan {
 		historyTagihan = append(historyTagihan, t)
 	}

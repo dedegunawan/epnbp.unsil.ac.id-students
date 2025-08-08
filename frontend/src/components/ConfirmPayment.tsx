@@ -70,7 +70,7 @@ export const ConfirmPayment = ({
       // hanya dijalankan jika tidak error (tidak 500)
       toast({
         title: "Berhasil",
-        description: "Konfirmasi pembayaran berhasil diupload",
+        description: "Konfirmasi pembayaran berhasil diupload. Silahkan cek berkala untuk di cek oleh bagian keuangan.",
       });
 
       console.log("Tagihan ID:", studentBill.ID);

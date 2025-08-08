@@ -86,6 +86,7 @@ type StudentBill struct {
 	Name               string `gorm:"size:100"`
 	Quantity           int    `gorm:"default:1"`
 	Amount             int64  `gorm:"default:0"` // nominal tagihan awal (tanpa diskon)
+	Beasiswa           int64  `gorm:"default:0"`
 	PaidAmount         int64  `gorm:"default:0"`
 	Draft              bool   `gorm:"default:true"`
 	Note               string `gorm:"size:255"`

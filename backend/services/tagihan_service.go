@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
@@ -21,6 +22,28 @@ type tagihanService struct {
 
 func NewTagihanSerice(repo repositories.TagihanRepository) TagihanService {
 	return &tagihanService{repo: repo}
+}
+
+func (r *tagihanService) GetNominalBeasiswa(studentId string, academicYear string) int64 {
+	var total int64
+
+	dbEpnbp := database.DBPNBP
+
+	err := dbEpnbp.Table("detail_beasiswa").
+		Joins("JOIN beasiswa ON beasiswa.id = detail_beasiswa.beasiswa_id").
+		Select("COALESCE(CAST(SUM(detail_beasiswa.nominal_beasiswa) AS SIGNED), 0)").
+		Where("beasiswa.status = ?", "active").
+		Where("detail_beasiswa.tahun_id = ?", academicYear).
+		Where("detail_beasiswa.npm = ?", studentId).
+		Scan(&total).Error
+
+	if err != nil {
+		utils.Log.Info("Error saat ambil total nominal_beasiswa:", err)
+		return 0
+	}
+
+	return total
+
 }
 
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
@@ -46,14 +69,29 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", mahasiswa.UKT)
 	}
 
+	nominalBeasiswa := r.GetNominalBeasiswa(string(mahasiswa.MhswID), financeYear.AcademicYear)
+
+	utils.Log.Info("nominalBeasiswa:", nominalBeasiswa)
+
+	sisaBeasiswa := nominalBeasiswa
 	// Generate StudentBill berdasarkan item
 	for _, item := range items {
+		nominalBeasiswaSaatIni := int64(0)
+		nominalTagihan := int64(item.Amount)
+		if sisaBeasiswa > 0 && sisaBeasiswa >= item.Amount {
+			sisaBeasiswa = sisaBeasiswa - item.Amount
+			nominalBeasiswaSaatIni = item.Amount
+			nominalTagihan = 0
+		} else if sisaBeasiswa > 0 {
+			nominalBeasiswaSaatIni = sisaBeasiswa
+			nominalTagihan = item.Amount - nominalBeasiswaSaatIni
+		}
 		bill := models.StudentBill{
 			StudentID:          string(mahasiswa.MhswID),
 			AcademicYear:       financeYear.AcademicYear,
 			BillTemplateItemID: item.BillTemplateID,
 			Name:               item.AdditionalName,
-			Amount:             item.Amount,
+			Amount:             nominalTagihan,
 			PaidAmount:         0,
 			CreatedAt:          time.Now(),
 			UpdatedAt:          time.Now(),

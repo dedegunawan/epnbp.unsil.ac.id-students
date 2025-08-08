@@ -16,6 +16,7 @@ func main() {
 	utils.InitStorage()
 
 	database.ConnectDatabase()
+	database.ConnectDatabasePnbp()
 
 	//worker := services.NewWorkerService(database.DB)
 	//sintesys := services.NewSintesys(os.Getenv("SINTESYS_APP_URL"), os.Getenv("SINTESYS_APP_TOKEN"))
