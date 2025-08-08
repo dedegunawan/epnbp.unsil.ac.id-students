@@ -20,6 +20,11 @@ func ConnectDatabasePnbp() {
 		os.Getenv("EPNBP_DB_NAME"),     // Database name
 	)
 
+	utils.Log.Info("Connecting Pnbp Database")
+	utils.Log.Info("Connecting MySQL at %s:%s db=%s user=%s",
+		os.Getenv("EPNBP_DB_HOST"), os.Getenv("EPNBP_DB_PORT"),
+		os.Getenv("EPNBP_DB_NAME"), os.Getenv("EPNBP_DB_USER"))
+
 	dbpnbp, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		utils.Log.Fatal("Failed to connect to MySQL database:", err)
