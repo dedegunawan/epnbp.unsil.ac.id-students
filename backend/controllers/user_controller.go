@@ -169,9 +169,9 @@ func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
 		statusMhswID = "-"
 	}
 
-	statusAkademikId, ok := full_data["StatusAkademikID"].(int)
-	if !ok {
-		statusAkademikId = 0
+	var statusAkademikId int
+	if v, ok := full_data["StatusAkademikID"].(float64); ok {
+		statusAkademikId = int(v)
 	}
 	utils.Log.Info("GetIsMahasiswaAktifFromFullData", map[string]string{
 		"MhswID":       statusMhswID,
