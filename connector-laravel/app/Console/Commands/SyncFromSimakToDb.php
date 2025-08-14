@@ -13,7 +13,7 @@ class SyncFromSimakToDb extends Command
      *
      * @var string
      */
-    protected $signature = 'app:sync-from-simak-to-db';
+    protected $signature = 'app:sync-from-simak-to-db {--tahun=}';
 
     /**
      * The console command description.
@@ -27,12 +27,36 @@ class SyncFromSimakToDb extends Command
      */
     public function handle()
     {
+        $tahunOption = $this->option('tahun');
+
+        if ($tahunOption) {
+            $this->info("📅 Filter tahun: {$tahunOption}");
+        } else {
+            $this->warn("⚠ Tidak ada filter tahun, semua data >= 2018 akan di-sync.");
+        }
+
+
         $mysql = DB::connection('mysql_old');
         $pgsql = DB::connection('pgsql');
 
         $this->info("🚀 Memulai sinkronisasi bipot → bill_templates...");
 
-        $bipots = $mysql->table('bipot')->where('NA', 'N')->where('Tahun', '>=', '2018')->get();
+        $pgsql->statement("
+        SELECT setval(pg_get_serial_sequence('bill_templates','id'),
+                      COALESCE((SELECT MAX(id) FROM bill_templates), 0));
+        ");
+        $pgsql->statement("
+        SELECT setval(pg_get_serial_sequence('bill_template_items','id'),
+                      COALESCE((SELECT MAX(id) FROM bill_template_items), 0));
+        ");
+
+        $query = $mysql->table('bipot')->where('NA', 'N');
+        if ($tahunOption) {
+            $query = $query->where('Tahun', $tahunOption);
+        } else {
+            $query = $query->where('Tahun', '>=', '2018');
+        }
+        $bipots = $query->get();
 
         foreach ($bipots as $bipot) {
             // Gunakan 'code' sebagai kunci unik
