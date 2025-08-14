@@ -173,6 +173,10 @@ func CallbackHandler(c *gin.Context) {
 	err = mahasiswaService.CreateFromSimak(utils.GetEmailPrefix(claims.Email))
 
 	if err != nil {
+		err = mahasiswaService.CreateFromMasterMahasiswa(utils.GetEmailPrefix(claims.Email))
+	}
+
+	if err != nil {
 		utils.Log.Info(fmt.Sprintf("Err : %s", err.Error()))
 		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to create mahasiswa user")
 	}

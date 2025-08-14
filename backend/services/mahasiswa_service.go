@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"os"
+	"strconv"
 
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
@@ -21,6 +23,7 @@ type MahasiswaService interface {
 	Update(mahasiswa *models.Mahasiswa) error
 	Delete(id uuid.UUID) error
 	CreateFromSimak(mhswID string) error
+	CreateFromMasterMahasiswa(mhswID string) error
 }
 
 type mahasiswaService struct {
@@ -213,6 +216,116 @@ func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 		ProdiID:  prodi.ID,
 		BIPOTID:  string(mahasiswaData.Data.BIPOTID),
 		UKT:      string(mahasiswaData.Data.UKT),
+		FullData: string(jsonBytes),
+	}).Error
+	if err != nil {
+		return fmt.Errorf("gagal update mahasiswa: %w", err)
+	}
+
+	return nil
+}
+
+func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
+	mhsw, err := s.GetByMhswID(mhswID)
+	if err == nil && mhsw != nil {
+		return nil
+	}
+
+	// 1. Ambil data mahasiswa dari Master Mahasiswa
+	var mhswMaster models.MahasiswaMaster
+	err = database.DBPNBP.Preload("MasterTagihan").Where("MhswID=?", mhswID).Find(&mhswMaster).Error
+	if err != nil {
+		return fmt.Errorf("gagal ambil data mahasiswa master: %w", err)
+	}
+
+	prodi_id := mhswMaster.ProdiID
+	if prodi_id == 0 {
+		return fmt.Errorf("gagal ambil data mahasiswa master")
+	}
+	var prodiData models.ProdiPnbp
+	err = database.DBPNBP.Where("id=?", prodi_id).Find(&prodiData).Error
+	if err != nil {
+		return fmt.Errorf("gagal ambil data prodi master: %w", err)
+	}
+
+	var fakultasData models.FakultasPnbp
+	err = database.DBPNBP.Where("id=?", prodiData.FakultasID).
+		Find(&fakultasData).Error
+	if err != nil {
+		return fmt.Errorf("gagal ambil data fakultas master: %w", err)
+	}
+
+	db := s.repo.GetDB()
+
+	// 3. Sinkron Fakultas
+	var fakultas models.Fakultas
+	utils.Log.Info(prodiData.ID)
+	// 3.1. FirstOrCreate
+	err = db.FirstOrCreate(&fakultas, models.Fakultas{
+		KodeFakultas: fakultasData.KodeFakultas,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("gagal insert fakultas: %w", err)
+	}
+
+	// 3.2. Update berdasarkan primary key
+	err = db.Model(&fakultas).Update("nama_fakultas", fakultasData.NamaFakultas).Error
+	if err != nil {
+		return fmt.Errorf("gagal update nama fakultas: %w", err)
+	}
+
+	// 4. Sinkron Prodi
+	var prodi models.Prodi
+
+	// 1. FirstOrCreate berdasarkan kode_prodi
+	err = db.FirstOrCreate(&prodi, models.Prodi{
+		KodeProdi:  prodiData.KodeProdi,
+		FakultasID: fakultas.ID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("gagal insert prodi: %w", err)
+	}
+
+	// 2. Update isi prodi (pastikan prodi.ID sudah terisi)
+	err = db.Model(&prodi).Updates(models.Prodi{
+		NamaProdi:  prodiData.NamaProdi,
+		FakultasID: fakultas.ID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("gagal update prodi: %w", err)
+	}
+
+	jsonBytes, err := json.Marshal(mhswMaster)
+	if err != nil {
+		// Tangani error jika gagal marshal
+		return fmt.Errorf("Gagal encode JSON mahasiswa:", err)
+	}
+
+	// 5. Sinkron Mahasiswa
+	var mahasiswa models.Mahasiswa
+
+	// Cari atau buat mahasiswa baru berdasarkan MhswID dan ProdiID
+	err = db.FirstOrCreate(&mahasiswa, models.Mahasiswa{
+		MhswID:  mhswMaster.StudentID,
+		ProdiID: prodi.ID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("gagal firstOrCreate mahasiswa: %w", err)
+	}
+
+	// set bipotid
+	BIPOTID := 0
+	if mhswMaster.MasterTagihanID != 0 && mhswMaster.MasterTagihan != nil {
+		BIPOTID = int(mhswMaster.MasterTagihan.BipotID)
+	}
+
+	// Update data yang lain (nama, email, dll)
+	err = db.Model(&mahasiswa).Updates(models.Mahasiswa{
+		Nama:     mhswMaster.NamaLengkap,
+		Email:    mhswMaster.Email,
+		ProdiID:  prodi.ID,
+		BIPOTID:  strconv.Itoa(BIPOTID),
+		UKT:      strconv.Itoa(int(mhswMaster.UKT)),
 		FullData: string(jsonBytes),
 	}).Error
 	if err != nil {
