@@ -25,3 +25,7 @@ type FakultasPnbp struct {
 	CreatedAt    time.Time `gorm:"column:created_at"`
 	UpdatedAt    time.Time `gorm:"column:updated_at"`
 }
+
+func (FakultasPnbp) TableName() string {
+	return "fakultas"
+}
