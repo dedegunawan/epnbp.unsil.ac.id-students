@@ -13,6 +13,8 @@ const Index = () => {
 
   const { profile } = useAuthToken();
   const kel_ukt = profile?.mahasiswa?.kel_ukt;
+  const kode_prodi = profile?.mahasiswa?.prodi?.kode_prodi;
+  const is_pasca = kode_prodi.substring(0, 1) == '8' || kode_prodi.substring(0, 1) == '9';
 
   return (
     <div className="min-h-screen bg-background">
@@ -38,7 +40,7 @@ const Index = () => {
           <StudentInfo />
 
           {/* Tabs for different sections */}
-          {kel_ukt === "0" ? <FormKipk/> : <PaymentTabs/>}
+          {kel_ukt === "0" && !is_pasca  ? <FormKipk/> : <PaymentTabs/>}
         </div>
       </main>
     </div>

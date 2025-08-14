@@ -51,6 +51,9 @@ export const StudentInfo = () => {
     console.log(tahun);
   }, [tahun]);
 
+  const kode_prodi = profile?.mahasiswa?.prodi?.kode_prodi;
+  const is_pasca = kode_prodi.substring(0, 1) == '8' || kode_prodi.substring(0, 1) == '9';
+
 
   const backToSintesys = async () => {
 
@@ -184,7 +187,7 @@ export const StudentInfo = () => {
             <Tag className="h-4 w-4 text-primary" />
             <div>
               <p className="font-medium">Kel UKT</p>
-              <p className="text-muted-foreground">{studentData.kel_ukt}</p>
+              <p className="text-muted-foreground">{is_pasca ? "-" : studentData.kel_ukt}</p>
             </div>
           </div>
 
