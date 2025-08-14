@@ -52,7 +52,10 @@ export const StudentInfo = () => {
   }, [tahun]);
 
   const kode_prodi = profile?.mahasiswa?.prodi?.kode_prodi;
-  const is_pasca = kode_prodi.substring(0, 1) == '8' || kode_prodi.substring(0, 1) == '9';
+  console.log("Kode Prodi:", kode_prodi);
+  const is_pasca = typeof kode_prodi === 'string' &&
+      (kode_prodi.substring(0, 1) === '8' || kode_prodi.substring(0, 1) === '9');
+
 
 
   const backToSintesys = async () => {
