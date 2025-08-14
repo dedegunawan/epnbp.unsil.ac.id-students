@@ -173,6 +173,12 @@ func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
 	if !ok || statusAkademikId == 0 {
 		statusAkademikId = 0
 	}
+	utils.Log.Info("GetIsMahasiswaAktifFromFullData", map[string]string{
+		"MhswID":       statusMhswID,
+		"AkademikID":   fmt.Sprintf("%d", statusAkademikId),
+		"statusMhswID": statusMhswID,
+		"full_data":    fmt.Sprintf("%v", full_data),
+	})
 	return statusMhswID == "A" || statusAkademikId == 1
 }
 
