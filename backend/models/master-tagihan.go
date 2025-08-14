@@ -2,8 +2,6 @@ package models
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // MasterTagihan merepresentasikan tabel `master_tagihan`
@@ -20,9 +18,8 @@ type MasterTagihan struct {
 	Prodi *ProdiPnbp `gorm:"foreignKey:ProdiID;references:ID"`
 
 	// Timestamps & Soft delete (opsional; hapus DeletedAt jika tidak pakai soft delete)
-	CreatedAt time.Time      `gorm:"column:created_at"`
-	UpdatedAt time.Time      `gorm:"column:updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 // TableName memastikan nama tabel sama seperti di Laravel
