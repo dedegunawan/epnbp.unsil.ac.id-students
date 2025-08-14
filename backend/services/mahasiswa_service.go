@@ -233,7 +233,7 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 
 	// 1. Ambil data mahasiswa dari Master Mahasiswa
 	var mhswMaster models.MahasiswaMaster
-	err = database.DBPNBP.Preload("MasterTagihan").Where("MhswID=?", mhswID).Find(&mhswMaster).Error
+	err = database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).Find(&mhswMaster).Error
 	if err != nil {
 		return fmt.Errorf("gagal ambil data mahasiswa master: %w", err)
 	}
