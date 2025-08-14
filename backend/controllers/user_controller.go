@@ -173,7 +173,7 @@ func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
 	if !ok || statusAkademikId == 0 {
 		statusAkademikId = 0
 	}
-	return statusMhswID != "A" || statusAkademikId != 1
+	return statusMhswID == "A" || statusAkademikId == 1
 }
 
 func GenerateCurrentBill(c *gin.Context) {
@@ -202,7 +202,7 @@ func GenerateCurrentBill(c *gin.Context) {
 
 	// Panggil repository untuk ambil FinanceYear aktif
 	// hardcode status mahasiswa aktif
-	if GetIsMahasiswaAktifFromFullData(*mahasiswa) {
+	if !GetIsMahasiswaAktifFromFullData(*mahasiswa) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
 		return
 	}
@@ -240,7 +240,7 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 	}
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	if GetIsMahasiswaAktifFromFullData(mahasiswa) {
+	if !GetIsMahasiswaAktifFromFullData(mahasiswa) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
 		return
 	}
