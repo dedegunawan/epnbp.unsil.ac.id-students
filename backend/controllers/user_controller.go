@@ -161,6 +161,21 @@ func RegenerateCurrentBill(c *gin.Context) {
 	}
 	GenerateCurrentBill(c)
 }
+
+func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
+	full_data := mahasiswa.ParseFullData()
+	statusMhswID, ok := full_data["StatusMhswID"].(string)
+	if !ok || statusMhswID == "" {
+		statusMhswID = "-"
+	}
+
+	statusAkademikId, ok := full_data["StatusAkademikID"].(int)
+	if !ok || statusAkademikId == 0 {
+		statusAkademikId = 0
+	}
+	return statusMhswID != "A" || statusAkademikId != 1
+}
+
 func GenerateCurrentBill(c *gin.Context) {
 	_, mahasiswa, mustreturn := getMahasiswa(c)
 	if mustreturn {
@@ -185,13 +200,9 @@ func GenerateCurrentBill(c *gin.Context) {
 		return
 	}
 
-	full_data := mahasiswa.ParseFullData()
-	statusMhswID, ok := full_data["StatusMhswID"].(string)
-	if !ok || statusMhswID == "" {
-		statusMhswID = "-"
-	}
 	// Panggil repository untuk ambil FinanceYear aktif
-	if statusMhswID != "A" {
+	// hardcode status mahasiswa aktif
+	if GetIsMahasiswaAktifFromFullData(*mahasiswa) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
 		return
 	}
@@ -228,13 +239,8 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 		return
 	}
 
-	full_data := mahasiswa.ParseFullData()
-	statusMhswID, ok := full_data["StatusMhswID"].(string)
-	if !ok || statusMhswID == "" {
-		statusMhswID = "-"
-	}
 	// Panggil repository untuk ambil FinanceYear aktif
-	if statusMhswID != "A" {
+	if GetIsMahasiswaAktifFromFullData(mahasiswa) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
 		return
 	}
