@@ -28,25 +28,9 @@ func NewEpnbpService(repo repositories.EpnbpRepository) EpnbpService {
 
 func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mahasiswa, studentBill models.StudentBill, financeYear models.FinanceYear) (*models.PayUrl, error) {
 
-	// Lokasi Jakarta
-	loc, err := time.LoadLocation("Asia/Jakarta")
-	if err != nil {
-		utils.Log.Info("cannot load Asia/Jakarta location: %v", err)
-	}
-
-	// Buat ulang time.Time dari financeYear.EndDate sebagai UTC agar Location tidak nil
-	expiredAtUTC := time.Date(
-		financeYear.EndDate.Year(), financeYear.EndDate.Month(), financeYear.EndDate.Day(),
-		financeYear.EndDate.Hour(), financeYear.EndDate.Minute(), financeYear.EndDate.Second(),
-		financeYear.EndDate.Nanosecond(), time.UTC, // ini yang penting!
-	)
-
-	// Konversi ke Jakarta
-	expiredAtWithLoc := expiredAtUTC.In(loc)
-
 	// Siapkan payload untuk API
 	now := time.Now()
-	//expiredAt := financeYear.EndDate
+	expiredAt := financeYear.EndDate
 	revenueSourceID := os.Getenv("REVENUE_SOURCE_ID") // sesuaikan dengan kebutuhanmu
 
 	full_data := mahasiswa.ParseFullData()
@@ -65,7 +49,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		"whatsapp":       handphone,
 		"name":           mahasiswa.Nama,
 		"invoice_name":   fmt.Sprintf("UKT %s", mahasiswa.Nama),
-		"expired_at":     expiredAtWithLoc.Format("2006-01-02 15:04:05"),
+		"expired_at":     expiredAt.Format("2006-01-02 15:04:05"),
 		"total_amount":   studentBill.Amount,
 		"details": []map[string]interface{}{
 			{
@@ -115,7 +99,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		InvoiceID:     uint(result.InvoiceID),
 		PayUrl:        result.PayUrl,
 		Nominal:       uint64(result.Nominal),
-		ExpiredAt:     expiredAtWithLoc,
+		ExpiredAt:     expiredAt,
 	}
 
 	if err := es.repo.GetDB().Save(&payUrl).Error; err != nil {
