@@ -65,7 +65,6 @@ func (r *tagihanService) GenerateCicilanMahasiswa(mahasiswa *models.Mahasiswa, f
 	mhswID := string(mahasiswa.MhswID)
 	financeCode := financeYear.Code
 	dbEpnbp := database.DBPNBP
-	db := database.DB
 
 	var cicilanJatuhTempo []models.DetailCicilan
 	today := time.Now().Format("2006-01-02") // Format YYYY-MM-DD
@@ -88,7 +87,7 @@ func (r *tagihanService) GenerateCicilanMahasiswa(mahasiswa *models.Mahasiswa, f
 				CreatedAt:          time.Now(),
 				UpdatedAt:          time.Now(),
 			}
-			db.Create(dt)
+			r.repo.DB.Create(&dt)
 		}
 		return true
 	}
