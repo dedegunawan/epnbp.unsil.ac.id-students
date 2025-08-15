@@ -25,7 +25,7 @@ interface Student {
   nama: string;
   fakultas: string;
   jurusan: string;
-  semester: string;
+  semester: any;
   tahunMasuk: string;
   email: string;
   status: string;
@@ -129,7 +129,7 @@ export const StudentInfo = () => {
       fakultas: m?.prodi?.fakultas?.nama_fakultas ?? "-",
       kel_ukt: m?.kel_ukt ?? "-",
       jurusan: m?.prodi?.nama_prodi ?? "-",
-      semester: "-", // Anda bisa sesuaikan jika ada
+      //semester: "-", // Anda bisa sesuaikan jika ada
       tahunMasuk: m?.parsed?.angkatan, // Ambil dari profile jika tersedia
       email: profile?.email, // Jika profile punya alamat
       status: m?.parsed?.StatusMhswID,
@@ -138,6 +138,7 @@ export const StudentInfo = () => {
           : "-",
       periodeSelesai: tahun ? `${dayjs(tahun.endDate).tz("Asia/Jakarta").format("dddd, D MMMM YYYY [pukul] HH:mm [WIB]")}`
           : "-",
+      semester: profile?.semester ?? "-",
     };
   }, [profile, tahun]);
 
@@ -193,6 +194,13 @@ export const StudentInfo = () => {
               <p className="text-muted-foreground">{is_pasca ? "-" : studentData.kel_ukt}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Semester</p>
+              <p className="text-muted-foreground">{studentData.semester}</p>
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
             <GraduationCap className="h-4 w-4 text-primary" />
@@ -209,13 +217,16 @@ export const StudentInfo = () => {
               <p className="text-muted-foreground">{studentData.periodeSelesai}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-primary" />
+
+          {!is_pasca && (<div className="flex items-center gap-2">
+            <GraduationCap className="h-4 w-4 text-primary"/>
             <div>
               <p className="font-medium">Form Cicilan</p>
-              <p className="text-muted-foreground">Silahkan isi form ini untuk mengajukan cicilan <a href="https://epnbp.unsil.ac.id/mahasiswa/cicilan/form"><strong>Form Cicilan</strong></a></p>
+              <p className="text-muted-foreground">Silahkan isi form ini untuk mengajukan cicilan <a
+                  href="https://epnbp.unsil.ac.id/mahasiswa/cicilan/form"><strong>Form Cicilan</strong></a></p>
             </div>
-          </div>
+          </div>)}
+
         </div>
 
         {/* Tombol Logout di bagian bawah */}

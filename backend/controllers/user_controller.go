@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -42,6 +43,13 @@ func Me(c *gin.Context) {
 		return
 	}
 	ssoID := c.GetString("sso_id")
+
+	semester, err := semesterSaatIniMahasiswa(mahasiswa)
+	if err != nil {
+		utils.Log.Error(err.Error())
+		semester = 0 // Jika ada error, set semester ke 0
+	}
+
 	c.JSON(200, gin.H{
 		"id":        user.ID,
 		"name":      user.Name,
@@ -49,7 +57,50 @@ func Me(c *gin.Context) {
 		"sso_id":    ssoID,
 		"is_active": user.IsActive,
 		"mahasiswa": mahasiswa,
+		"semester":  semester,
 	})
+}
+
+func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
+	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanSerice(tagihanRepo)
+
+	// Panggil repository untuk ambil FinanceYear aktif
+	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	if err != nil {
+		return 0, fmt.Errorf("Tahun aktif tidak ditemukan: %w", err)
+	}
+
+	TahunID := getTahunIDFormParsed(mahasiswa)
+	if TahunID != "" {
+		return tagihanService.HitungSemesterSaatIni(TahunID, activeYear.AcademicYear)
+	}
+	utils.Log.Info("TahunID tidak ditemukan pada data mahasiswa", "mahasiswa ", TahunID, " TahunID", mahasiswa.ParseFullData()["TahunID"])
+	return 0, fmt.Errorf("TahunID tidak ditemukan pada data mahasiswa")
+}
+
+func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
+	data := mahasiswa.ParseFullData()
+	tahunRaw, exists := data["TahunID"]
+	if !exists {
+		utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
+		return ""
+	}
+
+	var TahunID string
+	switch v := tahunRaw.(type) {
+	case string:
+		TahunID = v
+	case float64:
+		TahunID = fmt.Sprintf("%.0f", v)
+	case int:
+		TahunID = strconv.Itoa(v)
+	default:
+		utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
+		return ""
+	}
+	return TahunID
+
 }
 
 type StudentBillResponse struct {

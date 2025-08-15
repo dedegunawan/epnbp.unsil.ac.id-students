@@ -13,6 +13,7 @@ import (
 type TagihanService interface {
 	CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error
 	CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error
+	HitungSemesterSaatIni(tahunIDAwal string, tahunIDSekarang string) (int, error)
 	SavePaymentConfirmation(studentBill models.StudentBill, vaNumber string, paymentDate string, objectName string) (*models.PaymentConfirmation, error)
 }
 

@@ -51,6 +51,7 @@ interface UserProfile {
     sso_id: string;
     is_active: boolean;
     mahasiswa?: Mahasiswa;
+    semester?: any;
 }
 
 

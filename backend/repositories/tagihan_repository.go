@@ -112,7 +112,7 @@ func (r *TagihanRepository) GetBeasiswaByMahasiswaTahun(studentID string, academ
 
 	err := dbEpnbp.Table("detail_beasiswa").
 		Joins("JOIN beasiswa ON beasiswa.id = detail_beasiswa.beasiswa_id").
-		Select("SUM(detail_beasiswa.nominal_beasiswa)").
+		Select("CAST(COALESCE(SUM(detail_beasiswa.nominal_beasiswa), 0) AS UNSIGNED)").
 		Where("beasiswa.status = ?", "active").
 		Where("detail_beasiswa.tahun_id = ?", academicYear).
 		Where("detail_beasiswa.npm = ?", studentID).
