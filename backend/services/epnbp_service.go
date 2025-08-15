@@ -42,6 +42,12 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		handphone = "-"
 	}
 
+	expiredAtWithLoc := time.Date(
+		expiredAt.Year(), expiredAt.Month(), expiredAt.Day(),
+		expiredAt.Hour(), expiredAt.Minute(), expiredAt.Second(), expiredAt.Nanosecond(),
+		loc,
+	)
+
 	payload := map[string]interface{}{
 		"invoice_number": fmt.Sprintf("INV#UKT-%d-%s", studentBill.ID, studentBill.StudentID),
 		"identifier":     mahasiswa.MhswID,
@@ -49,7 +55,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		"whatsapp":       handphone,
 		"name":           mahasiswa.Nama,
 		"invoice_name":   fmt.Sprintf("UKT %s", mahasiswa.Nama),
-		"expired_at":     expiredAt.In(loc).Format("2006-01-02 15:04:05"),
+		"expired_at":     expiredAtWithLoc.Format("2006-01-02 15:04:05"),
 		"total_amount":   studentBill.Amount,
 		"details": []map[string]interface{}{
 			{
