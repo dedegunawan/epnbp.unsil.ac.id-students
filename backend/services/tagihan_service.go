@@ -183,8 +183,12 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	}
 
 	mhswID := mahasiswa.MhswID
+	TahunID := getTahunIDFormParsed(mahasiswa)
+	if TahunID == "" {
+		TahunID = "20" + mhswID[0:2] + "1"
+	}
 	financeCode := financeYear.Code
-	semesterSaatIni, err := r.HitungSemesterSaatIni("20"+mhswID[0:2]+"1", financeCode)
+	semesterSaatIni, err := r.HitungSemesterSaatIni(TahunID, financeCode)
 	if err != nil {
 		return err
 	}
@@ -214,6 +218,30 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	}
 
 	return nil
+}
+
+func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
+	data := mahasiswa.ParseFullData()
+	tahunRaw, exists := data["TahunID"]
+	if !exists {
+		utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
+		return ""
+	}
+
+	var TahunID string
+	switch v := tahunRaw.(type) {
+	case string:
+		TahunID = v
+	case float64:
+		TahunID = fmt.Sprintf("%.0f", v)
+	case int:
+		TahunID = strconv.Itoa(v)
+	default:
+		utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
+		return ""
+	}
+	return TahunID
+
 }
 
 // HitungSemesterSaatIni menghitung semester saat ini berdasarkan TahunID awal dan tahun akademik sekarang
