@@ -12,6 +12,10 @@ RUN go build -o app ./cmd/main.go
 # Stage 2: Run
 FROM alpine:latest
 
+ENV TZ=Asia/Jakarta
+# Tambahkan tzdata agar timezone seperti Asia/Jakarta dikenali
+RUN apk add --no-cache tzdata
+
 WORKDIR /root/
 
 COPY --from=builder /app/app .
