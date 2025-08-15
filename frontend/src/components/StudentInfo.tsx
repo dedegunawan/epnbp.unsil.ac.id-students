@@ -209,6 +209,13 @@ export const StudentInfo = () => {
               <p className="text-muted-foreground">{studentData.periodeSelesai}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            <div>
+              <p className="font-medium">Form Cicilan</p>
+              <p className="text-muted-foreground">Silahkan isi form ini untuk mengajukan cicilan <a href="https://epnbp.unsil.ac.id/mahasiswa/cicilan/form"><strong>Form Cicilan</strong></a></p>
+            </div>
+          </div>
         </div>
 
         {/* Tombol Logout di bagian bawah */}

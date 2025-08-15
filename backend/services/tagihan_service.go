@@ -46,10 +46,26 @@ func (r *tagihanService) GetNominalBeasiswa(studentId string, academicYear strin
 
 }
 
+func (r *tagihanService) CheckDepositMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) {
+	//dbPnbp := database.DBPNBP
+
+	// cek apakah sudah ada deposit yang digunakan di tahun tersebut
+	//var deposit models.DepositLedgerEntry
+	//dbPnbp.Where("student_id = ? AND academic_year = ? AND status = ?",)
+
+	// jika sudah ada kembalikan hasilnya & sukses, kecuali masih ada kekurangan, buatkan tagihan baru nya
+
+	// jika belum ada & masih punya deposit, buatkan tagihan deposit baru untuk mahasiswa tersebut
+
+	// jika tidak punya deposit kembalikan hasil kosong & lanjutkan
+}
+
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
 
 	// interception: jika mahasiswa memiliki data cicilan generate dari cicilan tersebut
-	//cicilan = r.repo.GetCicilanByStudentIDAndAcademicYear(string(mahasiswa.MhswID), financeYear.AcademicYear)
+	// cicilan = r.repo.GetCicilanByStudentIDAndAcademicYear(string(mahasiswa.MhswID), financeYear.AcademicYear)
+
+	// cek apakah punya deposit
 
 	var template models.BillTemplate
 
