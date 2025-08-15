@@ -24,6 +24,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: always
+    environment:
+      - TZ=Asia/Jakarta
     depends_on:
       - db
     env_file:
