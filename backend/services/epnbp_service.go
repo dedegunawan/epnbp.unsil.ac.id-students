@@ -28,6 +28,8 @@ func NewEpnbpService(repo repositories.EpnbpRepository) EpnbpService {
 
 func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mahasiswa, studentBill models.StudentBill, financeYear models.FinanceYear) (*models.PayUrl, error) {
 
+	loc, _ := time.LoadLocation("Asia/Jakarta") // GMT+7
+
 	// Siapkan payload untuk API
 	now := time.Now()
 	expiredAt := financeYear.EndDate
@@ -47,7 +49,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		"whatsapp":       handphone,
 		"name":           mahasiswa.Nama,
 		"invoice_name":   fmt.Sprintf("UKT %s", mahasiswa.Nama),
-		"expired_at":     expiredAt.Format(time.RFC3339),
+		"expired_at":     expiredAt.In(loc).Format(time.DateTime),
 		"total_amount":   studentBill.Amount,
 		"details": []map[string]interface{}{
 			{
