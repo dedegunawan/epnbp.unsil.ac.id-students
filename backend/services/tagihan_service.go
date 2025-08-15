@@ -61,12 +61,47 @@ func (r *tagihanService) CheckDepositMahasiswa(mahasiswa *models.Mahasiswa, fina
 	// jika tidak punya deposit kembalikan hasil kosong & lanjutkan
 }
 
+func (r *tagihanService) GenerateCicilanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+	mhswID := string(mahasiswa.MhswID)
+	financeCode := financeYear.Code
+	dbEpnbp := database.DBPNBP
+	db := database.DB
+
+	var cicilanJatuhTempo []models.DetailCicilan
+	today := time.Now().Format("2006-01-02") // Format YYYY-MM-DD
+
+	err := dbEpnbp.Preload("Cicilan").
+		Joins("JOIN cicilans ON cicilans.id = detail_cicilans.cicilan_id").
+		Where("detail_cicilans.due_date <= ?", today).
+		Where("cicilans.tahun_id = ? AND cicilans.npm = ?", financeCode, mhswID).
+		Find(&cicilanJatuhTempo).Error
+
+	if err == nil && len(cicilanJatuhTempo) > 0 {
+		for _, data := range cicilanJatuhTempo {
+			dt := models.StudentBill{
+				StudentID:          string(mahasiswa.MhswID),
+				AcademicYear:       financeYear.AcademicYear,
+				BillTemplateItemID: 0,
+				Name:               "Cicilan UKT",
+				Amount:             data.Amount,
+				PaidAmount:         0,
+				CreatedAt:          time.Now(),
+				UpdatedAt:          time.Now(),
+			}
+			db.Create(dt)
+		}
+		return true
+	}
+	return false
+}
+
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
 
 	// interception: jika mahasiswa memiliki data cicilan generate dari cicilan tersebut
-	// cicilan = r.repo.GetCicilanByStudentIDAndAcademicYear(string(mahasiswa.MhswID), financeYear.AcademicYear)
-
-	// cek apakah punya deposit
+	hasCicilan := r.GenerateCicilanMahasiswa(mahasiswa, financeYear)
+	if hasCicilan {
+		return nil
+	}
 
 	var template models.BillTemplate
 
