@@ -28,7 +28,7 @@ func NewEpnbpService(repo repositories.EpnbpRepository) EpnbpService {
 
 func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mahasiswa, studentBill models.StudentBill, financeYear models.FinanceYear) (*models.PayUrl, error) {
 
-	loc, _ := time.LoadLocation("Asia/Jakarta") // GMT+7
+	//loc, _ := time.LoadLocation("Asia/Jakarta") // GMT+7
 
 	// Siapkan payload untuk API
 	now := time.Now()
