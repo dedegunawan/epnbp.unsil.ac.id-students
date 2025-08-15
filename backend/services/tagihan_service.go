@@ -47,6 +47,10 @@ func (r *tagihanService) GetNominalBeasiswa(studentId string, academicYear strin
 }
 
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
+
+	// interception: jika mahasiswa memiliki data cicilan generate dari cicilan tersebut
+	//cicilan = r.repo.GetCicilanByStudentIDAndAcademicYear(string(mahasiswa.MhswID), financeYear.AcademicYear)
+
 	var template models.BillTemplate
 
 	// Ambil bill_template berdasarkan BIPOTID mahasiswa

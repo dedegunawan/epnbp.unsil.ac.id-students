@@ -98,7 +98,15 @@ type SimakProdiResponse struct {
 
 func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 	mhsw, err := s.GetByMhswID(mhswID)
-	if err == nil && mhsw != nil {
+
+	checkStatusMhswID := false
+	if mhsw != nil {
+		if StatusMhswID, ok := mhsw.ParseFullData()["StatusMhswID"].(string); ok && StatusMhswID != "A" {
+			checkStatusMhswID = true
+		}
+	}
+
+	if err == nil && mhsw != nil && !checkStatusMhswID {
 		return nil
 	}
 
