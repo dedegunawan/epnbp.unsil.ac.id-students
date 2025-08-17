@@ -26,3 +26,23 @@ type MasterTagihan struct {
 func (MasterTagihan) TableName() string {
 	return "master_tagihan"
 }
+
+type DetailTagihan struct {
+	ID              uint64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	MasterTagihanID uint64  `json:"master_tagihan_id" gorm:"not null;index"` // FK -> master_tagihan.id
+	BipotnamaID     *uint64 `json:"bipotnama_id,omitempty" gorm:"index"`     // FK -> bipotnama.id (opsional)
+	Bipot2ID        *uint64 `json:"bipot2id,omitempty" gorm:"column:bipot2id"`
+	Nama            string  `json:"nama" gorm:"size:191;not null"`
+	KelUKT          *string `json:"kel_ukt,omitempty" gorm:"column:kel_ukt;size:32"`
+	BerapaKali      *int    `json:"berapa_kali,omitempty" gorm:"column:berapa_kali"`
+	MulaiSesiBerapa *int    `json:"mulai_sesi_berapa,omitempty" gorm:"column:mulai_sesi_berapa"`
+	Nominal         int64   `json:"nominal" gorm:"not null"` // uang: gunakan integer (mis. rupiah)
+
+	// Relations
+	MasterTagihan *MasterTagihan `json:"master_tagihan,omitempty" gorm:"foreignKey:MasterTagihanID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (DetailTagihan) TableName() string { return "detail_tagihan" }

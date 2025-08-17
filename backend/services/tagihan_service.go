@@ -12,17 +12,26 @@ import (
 
 type TagihanService interface {
 	CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error
+
 	CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error
 	HitungSemesterSaatIni(tahunIDAwal string, tahunIDSekarang string) (int, error)
 	SavePaymentConfirmation(studentBill models.StudentBill, vaNumber string, paymentDate string, objectName string) (*models.PaymentConfirmation, error)
+
+	CekCicilanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool
+	CekPenangguhanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool
+	CekBeasiswaMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool
+	CekDepositMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool
+	IsNominalDibayarLebihKecilSeharusnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) (bool, int64, int64)
+	CreateNewTagihanSekurangnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear, tagihanKurang int64) error
 }
 
 type tagihanService struct {
-	repo repositories.TagihanRepository
+	repo                    repositories.TagihanRepository
+	masterTagihanRepository repositories.MasterTagihanRepository
 }
 
-func NewTagihanSerice(repo repositories.TagihanRepository) TagihanService {
-	return &tagihanService{repo: repo}
+func NewTagihanService(repo repositories.TagihanRepository, masterTagihanRepository repositories.MasterTagihanRepository) TagihanService {
+	return &tagihanService{repo: repo, masterTagihanRepository: masterTagihanRepository}
 }
 
 func (r *tagihanService) GetNominalBeasiswa(studentId string, academicYear string) int64 {
@@ -89,6 +98,24 @@ func (r *tagihanService) GenerateCicilanMahasiswa(mahasiswa *models.Mahasiswa, f
 			}
 			r.repo.DB.Create(&dt)
 		}
+		return true
+	}
+	return false
+}
+
+func (r *tagihanService) HasCicilanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+	mhswID := string(mahasiswa.MhswID)
+	financeCode := financeYear.Code
+	dbEpnbp := database.DBPNBP
+
+	var hasCicilanCount int64
+
+	err := dbEpnbp.Preload("Cicilan").
+		Joins("JOIN cicilans ON cicilans.id = detail_cicilans.cicilan_id").
+		Where("cicilans.tahun_id = ? AND cicilans.npm = ?", financeCode, mhswID).
+		Count(&hasCicilanCount).Error
+
+	if err == nil && hasCicilanCount > 0 {
 		return true
 	}
 	return false
@@ -334,4 +361,84 @@ func (r *tagihanService) savePaidStudentBill(studentBill models.StudentBill, amo
 
 	return true
 
+}
+
+func (r *tagihanService) CekCicilanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+	mhswID := string(mahasiswa.MhswID)
+	financeCode := financeYear.AcademicYear
+	var hasCicilanCount int64
+	dbEpnbp := database.DBPNBP
+	_ = dbEpnbp.Where("npm = ? AND tahun_id = ?", mhswID, financeCode).Model(&models.Cicilan{}).Count(&hasCicilanCount).Error
+
+	if hasCicilanCount > 0 {
+		return true
+	}
+
+	return false
+}
+
+func (r *tagihanService) CekPenangguhanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+
+	mhswID := string(mahasiswa.MhswID)
+	financeCode := financeYear.AcademicYear
+	var hasDepositDebitCount int64
+	dbEpnbp := database.DBPNBP
+	_ = dbEpnbp.Where("npm = ? AND tahun_id = ? and direction = ?", mhswID, financeCode, "debit").
+		Model(&models.DepositLedgerEntry{}).Count(&hasDepositDebitCount).Error
+
+	if hasDepositDebitCount > 0 {
+		return true
+	}
+
+	return false
+}
+
+func (r *tagihanService) CekBeasiswaMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+
+	mhswID := string(mahasiswa.MhswID)
+	financeCode := financeYear.AcademicYear
+	var hasBeasiswaCount int64
+	dbEpnbp := database.DBPNBP
+	_ = dbEpnbp.Where("npm = ? AND tahun_id = ?", mhswID, financeCode).
+		Model(&models.DetailBeasiswa{}).Count(&hasBeasiswaCount).Error
+
+	if hasBeasiswaCount > 0 {
+		return true
+	}
+
+	return false
+}
+
+func (r *tagihanService) CekDepositMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool {
+	return false
+}
+
+func (r *tagihanService) IsNominalDibayarLebihKecilSeharusnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) (bool, int64, int64) {
+	// seharusnya diambil dari BillTemplateItem
+	tagihanSeharusnya := r.masterTagihanRepository.GetNominalTagihanMahasiswa(*mahasiswa)
+
+	// ambil nominal tagihan yang sudah dibayar oleh mahasiswa
+	totalTagihanDibayar := r.repo.GetTotalStudentBill(mahasiswa.MhswID, financeYear.AcademicYear)
+	utils.Log.Info("Tagihan seharusnya:", tagihanSeharusnya, " Total tagihan dibayar:", totalTagihanDibayar)
+
+	return totalTagihanDibayar < tagihanSeharusnya, tagihanSeharusnya, totalTagihanDibayar
+}
+
+func (r *tagihanService) CreateNewTagihanSekurangnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear, tagihanKurang int64) error {
+	studentBill := models.StudentBill{
+		StudentID:          string(mahasiswa.MhswID),
+		AcademicYear:       financeYear.AcademicYear,
+		BillTemplateItemID: 0, // Asumsikan tidak ada item template yang
+		Name:               "UKT",
+		Amount:             tagihanKurang,
+		PaidAmount:         0,
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+	}
+
+	if err := r.repo.DB.Create(&studentBill).Error; err != nil {
+		return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
+	}
+
+	return nil
 }

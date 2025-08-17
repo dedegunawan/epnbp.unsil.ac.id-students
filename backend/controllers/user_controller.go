@@ -63,7 +63,8 @@ func Me(c *gin.Context) {
 
 func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
 	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
-	tagihanService := services.NewTagihanSerice(tagihanRepo)
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
 
 	// Panggil repository untuk ambil FinanceYear aktif
 	activeYear, err := tagihanRepo.GetActiveFinanceYear()
@@ -272,10 +273,38 @@ func GenerateCurrentBill(c *gin.Context) {
 		return
 	}
 
-	tagihanService := services.NewTagihanSerice(tagihanRepo)
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
 		if err := tagihanService.CreateNewTagihan(mahasiswa, activeYear); err != nil {
+			utils.Log.Info("Gagal membuat tagihan", "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
+			return
+		}
+	}
+
+	masihAdaKurangNominal := false
+
+	mangajukanCicilan := tagihanService.CekCicilanMahasiswa(mahasiswa, activeYear)
+	tidakMengajukanCicilan := !mangajukanCicilan
+	mengajukanPenangguhan := !tagihanService.CekPenangguhanMahasiswa(mahasiswa, activeYear)
+	tidakMengajukanPenangguhan := !mengajukanPenangguhan
+	mendapatBeasiswa := tagihanService.CekBeasiswaMahasiswa(mahasiswa, activeYear)
+	tidakMendapatBeasiswa := !mendapatBeasiswa
+	//punyaDeposit := tagihanService.CekDepositMahasiswa(mahasiswa, activeYear)
+	//tidakPunyaDeposit := !punyaDeposit
+
+	nominalDitagihaLebihKecilSeharusnya, tagihanSeharusnya, totalTagihanDibayar := tagihanService.IsNominalDibayarLebihKecilSeharusnya(mahasiswa, activeYear)
+
+	nominalKurangBayar := tagihanSeharusnya - totalTagihanDibayar
+
+	if tidakMengajukanCicilan && tidakMengajukanPenangguhan && tidakMendapatBeasiswa && nominalDitagihaLebihKecilSeharusnya {
+		masihAdaKurangNominal = true
+	}
+
+	if len(tagihan) > 0 && masihAdaKurangNominal {
+		if err := tagihanService.CreateNewTagihanSekurangnya(mahasiswa, activeYear, nominalKurangBayar); err != nil {
 			utils.Log.Info("Gagal membuat tagihan", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
 			return
@@ -310,7 +339,8 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 		return
 	}
 
-	tagihanService := services.NewTagihanSerice(tagihanRepo)
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
 		if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
@@ -409,8 +439,10 @@ func ConfirmPembayaran(c *gin.Context) {
 		return
 	}
 
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+
 	// Simpan ke database (opsional, sesuaikan dengan struktur Anda)
-	paymentConfirmation, err := services.NewTagihanSerice(tagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
+	paymentConfirmation, err := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan konfirmasi pembayaran"})
 		return

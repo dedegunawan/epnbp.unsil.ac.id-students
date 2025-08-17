@@ -154,3 +154,18 @@ func (r *TagihanRepository) GetAllPaidBillsExcept(studentID string, academicYear
 		Find(&bills).Error
 	return bills, err
 }
+
+// Ambil tagihan mahasiswa berdasarkan student_id & academic_year
+func (r *TagihanRepository) GetTotalStudentBill(studentID string, academicYear string) int64 {
+	var total int64
+	err := r.DB.
+		Model(&models.StudentBill{}).
+		Where("student_id = ? AND academic_year = ?", studentID, academicYear).
+		Select("SUM((quantity * amount))").
+		Scan(&total).Error
+	
+	if err != nil {
+		total = 0
+	}
+	return total
+}
