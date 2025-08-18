@@ -383,8 +383,14 @@ func (r *tagihanService) CekPenangguhanMahasiswa(mahasiswa *models.Mahasiswa, fi
 	financeCode := financeYear.AcademicYear
 	var hasDepositDebitCount int64
 	dbEpnbp := database.DBPNBP
-	_ = dbEpnbp.Where("npm = ? AND tahun_id = ? and direction = ?", mhswID, financeCode, "debit").
+	err := dbEpnbp.Where("npm = ? AND tahun_id = ? and direction = ?", mhswID, financeCode, "debit").
 		Model(&models.DepositLedgerEntry{}).Count(&hasDepositDebitCount).Error
+
+	if err != nil {
+		utils.Log.Error("Error checking deposit debit count:", err)
+		return false
+
+	}
 
 	if hasDepositDebitCount > 0 {
 		return true
