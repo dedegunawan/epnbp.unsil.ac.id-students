@@ -60,8 +60,17 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 
 	}
 
+	var prodi models.ProdiPnbp
+	err := mtr.DB.Where("kode_prodi = ?", prodiIDString).
+		First(prodi).Error
+	if err != nil {
+		return nil, errors.New("invalid prodi data: " + err.Error())
+	}
+
+	prodiID := prodi.ID
+
 	var tagihan models.MasterTagihan
-	err := mtr.DB.Where("Angkatan = ? and ProdiID = ?", tahun, prodiIDString).
+	err = mtr.DB.Where("angkatan = ? and prodi_id = ?", tahun, prodiID).
 		First(&tagihan).Error
 
 	if err != nil {
