@@ -83,7 +83,7 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 	utils.Log.Info("Querying detail tagihan for MasterTagihanID: ", tagihan.ID, " with UKT: ", UKTString)
 
 	var detailTagihan models.DetailTagihan
-	err = mtr.DB.Where("MasterTagihanID = ? and kel_ukt = ?", tagihan.ID, UKTString).
+	err = mtr.DB.Where("master_tagihan_id = ? and kel_ukt = ?", tagihan.ID, UKTString).
 		First(&detailTagihan).Error
 
 	return &detailTagihan, err
