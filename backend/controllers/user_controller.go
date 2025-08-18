@@ -303,6 +303,8 @@ func GenerateCurrentBill(c *gin.Context) {
 		masihAdaKurangNominal = true
 	}
 
+	utils.Log.Info("Haruskah buat tagihan baru? ", len(tagihan) > 0 && masihAdaKurangNominal, len(tagihan) > 0, masihAdaKurangNominal)
+
 	if len(tagihan) > 0 && masihAdaKurangNominal {
 		if err := tagihanService.CreateNewTagihanSekurangnya(mahasiswa, activeYear, nominalKurangBayar); err != nil {
 			utils.Log.Info("Gagal membuat tagihan", "error", err)

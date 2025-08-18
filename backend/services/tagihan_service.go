@@ -436,6 +436,8 @@ func (r *tagihanService) CreateNewTagihanSekurangnya(mahasiswa *models.Mahasiswa
 		UpdatedAt:          time.Now(),
 	}
 
+	utils.Log.Info("Membuat tagihan mahasiswa dengan nominal kurang:", tagihanKurang)
+
 	if err := r.repo.DB.Create(&studentBill).Error; err != nil {
 		return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
 	}
