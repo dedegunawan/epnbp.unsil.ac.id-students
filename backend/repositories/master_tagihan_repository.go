@@ -40,6 +40,15 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 
 	programID := utils.GetStringFromAny(mahasiswa.ParseFullData()["ProgramID"])
 
+	utils.Log.Info("Search by : ", map[string]interface{}{
+		"TahunID":      tahunIDString,
+		"ProdiID":      prodiIDString,
+		"ProgramID":    programID,
+		"RAWTahunID":   mahasiswa.ParseFullData()["TahunID"],
+		"RAWProdiID":   mahasiswa.ParseFullData()["ProdiID"],
+		"RAWProgramID": mahasiswa.ParseFullData()["ProgramID"],
+	})
+
 	if tahunIDString == "" || prodiIDString == "" || programID == "" {
 		return nil, errors.New("invalid mahasiswa data: TahunID, ProdiID, or ProgramID is missing")
 
