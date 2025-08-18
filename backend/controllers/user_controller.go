@@ -288,7 +288,7 @@ func GenerateCurrentBill(c *gin.Context) {
 
 	mangajukanCicilan := tagihanService.CekCicilanMahasiswa(mahasiswa, activeYear)
 	tidakMengajukanCicilan := !mangajukanCicilan
-	mengajukanPenangguhan := !tagihanService.CekPenangguhanMahasiswa(mahasiswa, activeYear)
+	mengajukanPenangguhan := tagihanService.CekPenangguhanMahasiswa(mahasiswa, activeYear)
 	tidakMengajukanPenangguhan := !mengajukanPenangguhan
 	mendapatBeasiswa := tagihanService.CekBeasiswaMahasiswa(mahasiswa, activeYear)
 	tidakMendapatBeasiswa := !mendapatBeasiswa
