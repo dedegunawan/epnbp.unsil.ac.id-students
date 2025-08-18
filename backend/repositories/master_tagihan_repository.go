@@ -3,6 +3,7 @@ package repositories
 import (
 	"errors"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"gorm.io/gorm"
 	"strconv"
 )
@@ -29,13 +30,12 @@ func (mtr *MasterTagihanRepository) GetNominalTagihanMahasiswa(mahasiswa models.
 func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.Mahasiswa) (*models.DetailTagihan, error) {
 
 	//tahunIDInt :=
-	tahunIDString := mahasiswa.ParseFullData()["TahunID"].(string)
+	tahunIDString := utils.GetStringFromAny(mahasiswa.ParseFullData()["TahunID"])
 	tahun := tahunIDString[:4] // Ambil 4 karakter pertama dari TahunID
 
-	//prodiIDInt := mahasiswa.ParseFullData()["ProdiID"].(string)
-	prodiIDString := mahasiswa.ParseFullData()["ProdiID"].(string)
+	prodiIDString := utils.GetStringFromAny(mahasiswa.ParseFullData()["ProdiID"])
 
-	programID := mahasiswa.ParseFullData()["ProgramID"].(string)
+	programID := utils.GetStringFromAny(mahasiswa.ParseFullData()["ProgramID"])
 
 	if tahunIDString == "" || prodiIDString == "" || programID == "" {
 		return nil, errors.New("invalid mahasiswa data: TahunID, ProdiID, or ProgramID is missing")
