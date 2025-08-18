@@ -5,6 +5,7 @@ import (
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"gorm.io/gorm"
+	"strconv"
 )
 
 type MasterTagihanRepository struct {
@@ -62,7 +63,7 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 
 	var prodi models.ProdiPnbp
 	err := mtr.DB.Where("kode_prodi = ?", prodiIDString).
-		First(prodi).Error
+		First(&prodi).Error
 	if err != nil {
 		return nil, errors.New("invalid prodi data: " + err.Error())
 	}
@@ -70,7 +71,7 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 	prodiID := prodi.ID
 
 	var tagihan models.MasterTagihan
-	err = mtr.DB.Where("angkatan = ? and prodi_id = ?", tahun, prodiID).
+	err = mtr.DB.Where("angkatan = ? and prodi_id = ?", tahun, strconv.Itoa(int(prodiID))).
 		First(&tagihan).Error
 
 	if err != nil {
