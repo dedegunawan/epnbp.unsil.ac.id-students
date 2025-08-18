@@ -273,7 +273,7 @@ func GenerateCurrentBill(c *gin.Context) {
 		return
 	}
 
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
 	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
