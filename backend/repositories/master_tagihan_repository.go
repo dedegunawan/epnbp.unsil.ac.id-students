@@ -5,7 +5,6 @@ import (
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"gorm.io/gorm"
-	"strconv"
 )
 
 type MasterTagihanRepository struct {
@@ -22,6 +21,10 @@ func (mtr *MasterTagihanRepository) GetNominalTagihanMahasiswa(mahasiswa models.
 	detailTagihan, err := mtr.FindMasterTagihanMahasiswa(mahasiswa)
 	if err == nil && detailTagihan != nil {
 		return detailTagihan.Nominal
+	}
+
+	if err != nil {
+		utils.Log.Info("GetNominalTagihanMahasiswa: error finding master tagihan for mahasiswa: ", err)
 	}
 
 	return 0
@@ -50,8 +53,9 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 		return nil, errors.New("invalid master tagihan data: " + err.Error())
 	}
 
-	UKTInt := mahasiswa.ParseFullData()["UKT"].(int64)
-	UKTString := strconv.Itoa(int(UKTInt))
+	UKTString := utils.GetStringFromAny(mahasiswa.ParseFullData()["UKT"])
+
+	utils.Log.Info("Querying detail tagihan for MasterTagihanID: ", tagihan.ID, " with UKT: ", UKTString)
 
 	var detailTagihan models.DetailTagihan
 	err = mtr.DB.Where("MasterTagihanID = ? and kel_ukt = ?", tagihan.ID, UKTString).
