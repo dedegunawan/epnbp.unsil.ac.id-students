@@ -28,16 +28,16 @@ func (mtr *MasterTagihanRepository) GetNominalTagihanMahasiswa(mahasiswa models.
 
 func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.Mahasiswa) (*models.DetailTagihan, error) {
 
-	tahunIDInt := mahasiswa.ParseFullData()["TahunID"].(float64)
-	tahunIDString := strconv.Itoa(int(tahunIDInt))
+	//tahunIDInt :=
+	tahunIDString := mahasiswa.ParseFullData()["TahunID"].(string)
 	tahun := tahunIDString[:4] // Ambil 4 karakter pertama dari TahunID
 
-	prodiIDInt := mahasiswa.ParseFullData()["ProdiID"].(float64)
-	prodiIDString := strconv.Itoa(int(prodiIDInt))
+	//prodiIDInt := mahasiswa.ParseFullData()["ProdiID"].(string)
+	prodiIDString := mahasiswa.ParseFullData()["ProdiID"].(string)
 
 	programID := mahasiswa.ParseFullData()["ProgramID"].(string)
 
-	if tahunIDInt == 0 || prodiIDInt == 0 || programID == "" {
+	if tahunIDString == "" || prodiIDString == "" || programID == "" {
 		return nil, errors.New("invalid mahasiswa data: TahunID, ProdiID, or ProgramID is missing")
 
 	}
