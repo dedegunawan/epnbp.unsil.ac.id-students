@@ -40,6 +40,12 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 
 	programID := utils.GetStringFromAny(mahasiswa.ParseFullData()["ProgramID"])
 
+	if programID == "" && (mahasiswa.MhswID[2:3] == "8" || mahasiswa.MhswID[2:3] == "9") {
+		programID = "2 - Non Reguler"
+	} else if programID == "" && mahasiswa.MhswID[2:3] != "8" && mahasiswa.MhswID[2:3] == "9" {
+		programID = "1 - Reg" // Default to program 1 if not specified
+	}
+
 	utils.Log.Info("Search by : ", map[string]interface{}{
 		"TahunID":      tahunIDString,
 		"ProdiID":      prodiIDString,
