@@ -22,17 +22,17 @@ func (mtr *MasterTagihanRepository) GetNominalTagihanMahasiswa(mahasiswa models.
 	if err == nil && detailTagihan != nil {
 		return detailTagihan.Nominal
 	}
-	
+
 	return 0
 }
 
 func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.Mahasiswa) (*models.DetailTagihan, error) {
 
-	tahunIDInt := mahasiswa.ParseFullData()["TahunID"].(int64)
+	tahunIDInt := mahasiswa.ParseFullData()["TahunID"].(float64)
 	tahunIDString := strconv.Itoa(int(tahunIDInt))
 	tahun := tahunIDString[:4] // Ambil 4 karakter pertama dari TahunID
 
-	prodiIDInt := mahasiswa.ParseFullData()["ProdiID"].(int64)
+	prodiIDInt := mahasiswa.ParseFullData()["ProdiID"].(float64)
 	prodiIDString := strconv.Itoa(int(prodiIDInt))
 
 	programID := mahasiswa.ParseFullData()["ProgramID"].(string)
@@ -54,7 +54,7 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 	UKTString := strconv.Itoa(int(UKTInt))
 
 	var detailTagihan models.DetailTagihan
-	err = mtr.DB.Where("MasterTagihanID = ? and UKT = ?", tagihan.ID, "."+UKTString+".").
+	err = mtr.DB.Where("MasterTagihanID = ? and kel_ukt = ?", tagihan.ID, UKTString).
 		First(&detailTagihan).Error
 
 	return &detailTagihan, err
