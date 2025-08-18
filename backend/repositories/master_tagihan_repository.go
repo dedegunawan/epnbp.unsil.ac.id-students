@@ -78,7 +78,7 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 		return nil, errors.New("invalid master tagihan data: " + err.Error())
 	}
 
-	UKTString := utils.GetStringFromAny(mahasiswa.ParseFullData()["UKT"])
+	UKTString := utils.GetStringFromAny(mahasiswa.UKT)
 
 	utils.Log.Info("Querying detail tagihan for MasterTagihanID: ", tagihan.ID, " with UKT: ", UKTString)
 
