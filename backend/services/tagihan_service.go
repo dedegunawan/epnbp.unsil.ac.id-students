@@ -392,6 +392,8 @@ func (r *tagihanService) CekPenangguhanMahasiswa(mahasiswa *models.Mahasiswa, fi
 
 	}
 
+	utils.Log.Info("Has Deposit Debit Count for Mahasiswa:", mhswID, "Finance Year:", financeCode, "Count:", hasDepositDebitCount)
+
 	if hasDepositDebitCount > 0 {
 		return true
 	}
