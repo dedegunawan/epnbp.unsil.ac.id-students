@@ -172,7 +172,7 @@ func (s *sintesys) ProccessFromCallback(callback models.PaymentCallback) (bool, 
 		return false, "", err
 	}
 
-	tagihanRepo := repositories.NewTagihanRepository(database.DB)
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 	_, err = tagihanRepo.FindStudentBillByID(strconv.Itoa(int(invoice.InvoiceID)))
 
 	if err != nil {

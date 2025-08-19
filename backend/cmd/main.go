@@ -18,6 +18,8 @@ func main() {
 	database.ConnectDatabase()
 	database.ConnectDatabasePnbp()
 
+	// Uncomment if you need to initialize repositories or services
+
 	//worker := services.NewWorkerService(database.DB)
 	//sintesys := services.NewSintesys(os.Getenv("SINTESYS_APP_URL"), os.Getenv("SINTESYS_APP_TOKEN"))
 

@@ -62,12 +62,12 @@ func Me(c *gin.Context) {
 }
 
 func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
-	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 	if err != nil {
 		return 0, fmt.Errorf("Tahun aktif tidak ditemukan: %w", err)
 	}
@@ -121,10 +121,10 @@ func GetStudentBillStatus(c *gin.Context) {
 
 	mhswID := mahasiswa.MhswID
 
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
@@ -197,10 +197,10 @@ func RegenerateCurrentBill(c *gin.Context) {
 	}
 
 	mhswID := mahasiswa.MhswID
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
@@ -250,10 +250,10 @@ func GenerateCurrentBill(c *gin.Context) {
 		}
 	}
 
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
@@ -274,7 +274,7 @@ func GenerateCurrentBill(c *gin.Context) {
 	}
 
 	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
-	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
 		if err := tagihanService.CreateNewTagihan(mahasiswa, activeYear); err != nil {
@@ -319,10 +319,10 @@ func GenerateCurrentBill(c *gin.Context) {
 func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa) {
 	utils.Log.Info("GenerateCurrentBillPascasarjana")
 	mhswID := mahasiswa.MhswID
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(mahasiswa)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
@@ -342,7 +342,7 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 	}
 
 	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
-	tagihanService := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo)
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
 		if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
@@ -376,10 +376,10 @@ func GenerateUrlPembayaran(c *gin.Context) {
 		return
 	}
 
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYear()
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
 		return
@@ -429,7 +429,7 @@ func ConfirmPembayaran(c *gin.Context) {
 	}
 
 	// Validasi student bill (opsional)
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 	studentBill, err := tagihanRepo.FindStudentBillByID(studentBillID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tagihan tidak ditemukan"})
@@ -444,7 +444,7 @@ func ConfirmPembayaran(c *gin.Context) {
 	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
 
 	// Simpan ke database (opsional, sesuaikan dengan struktur Anda)
-	paymentConfirmation, err := services.NewTagihanService(tagihanRepo, masterTagihanagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
+	paymentConfirmation, err := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan konfirmasi pembayaran"})
 		return
@@ -505,8 +505,8 @@ func BackToSintesys(c *gin.Context) {
 		return
 	}
 
-	tagihanRepo := repositories.TagihanRepository{DB: database.DB}
-	year, err := tagihanRepo.GetActiveFinanceYear()
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	year, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
 
 	if err != nil {
 		RedirectSintesys(c)
