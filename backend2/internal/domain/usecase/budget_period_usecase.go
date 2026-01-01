@@ -1,101 +1,93 @@
 package usecase
 
 import (
-	"errors"
-	"fmt"
 	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/entity"
 	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/repository"
-	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/pkg/pointer"
-	"golang.org/x/crypto/bcrypt"
+	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/pkg/logger"
 )
 
-type UserUsecase interface {
-	Register(name, email, password string) (*entity.User, error)
-	GetByID(id uint64) (*entity.User, error)
-	GetByEmail(email string) (*entity.User, error)
-	List(page, size int) ([]entity.User, int64, error)
-	UpdateAvatar(id uint64, url string) error
-	SetActive(id uint64, active bool) error
-	GetOrCreateByEmail(ssoID string, email string, name string) (*entity.User, error)
+type BudgetPeriodUsecase interface {
+	// Create inserts a new record into the database.
+	Create(entity *entity.BudgetPeriod) error
+	// FindByID retrieves a record by its ID.
+	FindByID(id uint64) (*entity.BudgetPeriod, error)
+	// FindBy any field retrieves a record by a specific field and value.
+	FindBy(field string, value any) (*entity.BudgetPeriod, error)
+
+	// List retrieves a list of records with pagination.
+	List(page, size int) ([]entity.BudgetPeriod, int64, error)
+	// Update modifies an existing record.
+	Update(entity *entity.BudgetPeriod) error
+	// Delete removes a record by its ID.
+	Delete(id uint64) error
+	// Count returns the total number of records for a given entity type.
+	Count(filterInterface interface{}) (int64, error)
+	// GetAll retrieves all records of a specific type.
+	GetAll() ([]entity.BudgetPeriod, error)
+	// GetBy any field retrieves a record by a specific field and value.
+	GetBy(filterInterface interface{}) ([]entity.BudgetPeriod, error)
+
+	SetActive(entity *entity.BudgetPeriod) error
+	GetActive() (*entity.BudgetPeriod, error)
 }
 
-type userUsecase struct {
-	userService repository.UserRepository
+type budgetPeriodUsecase struct {
+	budgetPeriodRepository repository.BudgetPeriodRepository
+	logger                 *logger.Logger
 }
 
-func NewUserUsecase(userSvc repository.UserRepository) UserUsecase {
-	return &userUsecase{userService: userSvc}
+func NewBudgetPeriodUsecase(budgetPeriodRepository repository.BudgetPeriodRepository, logger *logger.Logger) BudgetPeriodUsecase {
+	return &budgetPeriodUsecase{budgetPeriodRepository: budgetPeriodRepository, logger: logger}
 }
 
-// Implement each method by calling the corresponding service...
-func (u *userUsecase) Register(name, email, password string) (*entity.User, error) {
-	if name == "" || email == "" || password == "" {
-		return nil, errors.New("name, email, and password must not be empty")
-	}
-
-	existingUser, _ := u.userService.FindByEmail(email)
-	if existingUser != nil {
-		return nil, errors.New("email is already registered")
-	}
-
-	passwordHashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
-	}
-
-	user := &entity.User{
-		Name:         name,
-		Email:        email,
-		PasswordHash: pointer.Of(string(passwordHashed)),
-	}
-
-	err = u.userService.Create(user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-	return user, nil
-
+// Create inserts a new record into the database.
+func (usecase budgetPeriodUsecase) Create(entity *entity.BudgetPeriod) error {
+	return usecase.budgetPeriodRepository.Create(entity)
 }
 
-func (u *userUsecase) GetByID(id uint64) (*entity.User, error) {
-	return u.userService.FindByID(id)
+// FindByID retrieves a record by its ID.
+func (usecase budgetPeriodUsecase) FindByID(id uint64) (*entity.BudgetPeriod, error) {
+	return usecase.budgetPeriodRepository.FindByID(id)
 }
 
-func (u *userUsecase) GetByEmail(email string) (*entity.User, error) {
-	return u.userService.FindByEmail(email)
+// FindBy any field retrieves a record by a specific field and value.
+func (usecase budgetPeriodUsecase) FindBy(field string, value any) (*entity.BudgetPeriod, error) {
+	return usecase.budgetPeriodRepository.FindBy(field, value)
 }
 
-func (u *userUsecase) List(page, size int) ([]entity.User, int64, error) {
-	return u.userService.List(page, size)
+// List retrieves a list of records with pagination.
+func (usecase budgetPeriodUsecase) List(page, size int) ([]entity.BudgetPeriod, int64, error) {
+	return usecase.budgetPeriodRepository.List(page, size)
 }
 
-func (u *userUsecase) UpdateAvatar(id uint64, url string) error {
-	return u.userService.UpdateAvatar(id, url)
+// Update modifies an existing record.
+func (usecase budgetPeriodUsecase) Update(entity *entity.BudgetPeriod) error {
+	return usecase.budgetPeriodRepository.Update(entity)
 }
 
-func (u *userUsecase) SetActive(id uint64, active bool) error {
-	return u.userService.SetActive(id, active)
+// Delete removes a record by its ID.
+func (usecase budgetPeriodUsecase) Delete(id uint64) error {
+	return usecase.budgetPeriodRepository.Delete(id)
 }
 
-func (r *userUsecase) GetOrCreateByEmail(ssoID string, email string, name string) (*entity.User, error) {
-	if ssoID == "" || email == "" {
-		return nil, errors.New("SSO ID and email must not be empty")
-	}
-	
-	user, err := r.userService.FindByEmail(email)
-	if user != nil && err == nil {
-		return user, nil
-	}
+// Count returns the total number of records for a given entity type.
+func (usecase budgetPeriodUsecase) Count(filterInterface interface{}) (int64, error) {
+	return usecase.budgetPeriodRepository.Count(filterInterface)
+}
 
-	user = &entity.User{
-		Name:     name,
-		Email:    email,
-		SsoID:    &ssoID,
-		IsActive: true,
-	}
-	if err := r.userService.Create(user); err != nil {
-		return nil, err
-	}
-	return user, nil
+// GetAll retrieves all records of a specific type.
+func (usecase budgetPeriodUsecase) GetAll() ([]entity.BudgetPeriod, error) {
+	return usecase.budgetPeriodRepository.GetAll()
+}
 
+// GetBy any field retrieves a record by a specific field and value.
+func (usecase budgetPeriodUsecase) GetBy(filterInterface interface{}) ([]entity.BudgetPeriod, error) {
+	return usecase.budgetPeriodRepository.GetBy(filterInterface)
+}
+
+func (usecase budgetPeriodUsecase) SetActive(entity *entity.BudgetPeriod) error {
+	return usecase.budgetPeriodRepository.SetActive(entity)
+}
+func (usecase budgetPeriodUsecase) GetActive() (*entity.BudgetPeriod, error) {
+	return usecase.budgetPeriodRepository.GetActive()
 }

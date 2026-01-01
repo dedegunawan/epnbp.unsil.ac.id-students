@@ -1,7 +1,9 @@
 package entity
 
 import (
+	"fmt"
 	"gorm.io/gorm"
+	"strconv"
 	"time"
 )
 
@@ -44,7 +46,7 @@ type Mahasiswa struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// Relasi
-	//Prodi             *Prodi             `gorm:"foreignKey:ProdiID" json:"prodi,omitempty"`
+	Prodi *Prodi `gorm:"foreignKey:ProdiID" json:"prodi,omitempty"`
 	//Program           *Program           `gorm:"foreignKey:ProgramID" json:"program,omitempty"`
 	//JenjangPendidikan *JenjangPendidikan `gorm:"foreignKey:JenjangPendidikanID" json:"jenjang_pendidikan,omitempty"`
 	//StatusAkademik    *StatusAkademik    `gorm:"foreignKey:StatusAkademikID" json:"status_akademik,omitempty"`
@@ -54,6 +56,39 @@ type Mahasiswa struct {
 }
 
 // TableName overrides the default table name
-func (MahasiswaMaster) TableName() string {
+func (Mahasiswa) TableName() string {
 	return "mahasiswa_masters"
+}
+
+func (mahasiswa *Mahasiswa) SemesterSaatIniMahasiswa(TahunID string) (int, error) {
+
+	if len(TahunID) != 5 {
+		return 0, fmt.Errorf("TahunID harus 5 karakter")
+	}
+
+	TahunMasuk := mahasiswa.TahunMasuk
+	tahunIDAwal := TahunMasuk
+	if len(TahunMasuk) != 5 {
+		tahunIDAwal = TahunMasuk[:4] + "1" // Asumsi semester pertama jika tidak lengkap
+	}
+	tahunIDSekarang := TahunID
+
+	if len(tahunIDAwal) != 5 || len(tahunIDSekarang) != 5 {
+		return 0, fmt.Errorf("format TahunID tidak valid, harus 5 digit seperti 20241")
+	}
+
+	// Parsing tahun dan semester dari masing-masing TahunID
+	tahunAwal, err1 := strconv.Atoi(tahunIDAwal[:4])
+	semesterAwal, err2 := strconv.Atoi(tahunIDAwal[4:])
+	tahunSekarang, err3 := strconv.Atoi(tahunIDSekarang[:4])
+	semesterSekarang, err4 := strconv.Atoi(tahunIDSekarang[4:])
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return 0, fmt.Errorf("gagal parsing tahun atau semester")
+	}
+
+	selisihTahun := tahunSekarang - tahunAwal
+	selisihSemester := (selisihTahun * 2) + (semesterSekarang - semesterAwal)
+
+	return selisihSemester + 1, nil
 }

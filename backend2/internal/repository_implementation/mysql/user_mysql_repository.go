@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/entity"
+	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/repository"
 	"gorm.io/gorm"
 )
 
@@ -9,7 +10,7 @@ type UserRepository struct {
 	db *gorm.DB
 }
 
-func NewUserRepository(db *gorm.DB) *UserRepository {
+func NewUserRepository(db *gorm.DB) repository.UserRepository {
 	return &UserRepository{db}
 }
 
@@ -28,6 +29,14 @@ func (r *UserRepository) FindByID(id uint64) (*entity.User, error) {
 func (r *UserRepository) FindByEmail(email string) (*entity.User, error) {
 	var user entity.User
 	if err := r.db.Where("email = ?", email).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepository) FindBySsoID(ssoID string) (*entity.User, error) {
+	var user entity.User
+	if err := r.db.Where("sso_id = ?", ssoID).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil

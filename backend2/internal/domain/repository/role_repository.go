@@ -6,6 +6,6 @@ type RoleRepository interface {
 	Create(role *entity.Role) error
 	Update(role *entity.Role) error
 	Delete(roleID uint64) error
-	GetByID(id uint64) (*entity.Role, error)
+	FindByID(id uint64) (*entity.Role, error)
 	GetAll() ([]entity.Role, error)
 }

@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/entity"
+	"github.com/dedegunawan/epnbp.unsil.ac.id-students-backend2/internal/domain/repository"
 	"gorm.io/gorm"
 )
 
@@ -9,7 +10,7 @@ type RolePermissionRepository struct {
 	db *gorm.DB
 }
 
-func NewRolePermissionRepository(db *gorm.DB) *RolePermissionRepository {
+func NewRolePermissionRepository(db *gorm.DB) repository.RolePermissionRepository {
 	return &RolePermissionRepository{db}
 }
 

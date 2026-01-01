@@ -318,7 +318,6 @@ func GenerateCurrentBill(c *gin.Context) {
 
 func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa) {
 	utils.Log.Info("GenerateCurrentBillPascasarjana")
-	mhswID := mahasiswa.MhswID
 	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
@@ -334,22 +333,13 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 		return
 	}
 
-	// Panggil repository untuk ambil tagihan mahasiswa
-	tagihan, err := tagihanRepo.GetStudentBills(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-
 	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
 	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
-	if len(tagihan) == 0 {
-		if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
-			utils.Log.Info("Gagal membuat tagihan", "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
-			return
-		}
+	if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
+		utils.Log.Info("Gagal membuat tagihan", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "OK"})
