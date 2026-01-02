@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"golang.org/x/oauth2"
@@ -43,9 +42,11 @@ func InitOIDC() {
 		EndSessionEndpoint string `json:"end_session_endpoint"`
 	}
 	if err := provider.Claims(&metadata); err != nil {
-		panic(fmt.Errorf("failed to read provider claims: %w", err))
+		utils.Log.Warnf("⚠️ Failed to read provider claims (logout endpoint may not work): %v", err)
+		LogoutEndpoint = "" // Set empty, GetLogoutURL will handle it
+	} else {
+		LogoutEndpoint = metadata.EndSessionEndpoint
 	}
-	LogoutEndpoint = metadata.EndSessionEndpoint
 }
 
 func GetLogoutURL(postLogoutRedirectURI string, clientID string) string {
