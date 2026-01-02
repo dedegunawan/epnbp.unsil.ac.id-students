@@ -43,7 +43,24 @@ services:
     env_file:
       - env/frontend.env.staging
     ports:
-      - "8081:80"  # ✅ Entry point staging (http://localhost:3000)
+      - "8081:80"  # ✅ Entry point staging (http://localhost:8081)
+    networks:
+      - dev-network
+
+  frontend3:
+    build:
+      context: .
+      dockerfile: ./frontend3/Dockerfile
+      args:
+        ENV_FILE: ./env/frontend3.env.staging
+    container_name: ujian-frontend3-staging
+    restart: always
+    depends_on:
+      - golang-backend
+    env_file:
+      - env/frontend3.env.staging
+    ports:
+      - "8082:80"  # ✅ Entry point frontend3 staging (http://localhost:8082)
     networks:
       - dev-network
 

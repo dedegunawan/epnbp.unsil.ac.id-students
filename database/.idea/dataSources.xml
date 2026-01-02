@@ -1,17 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="dev_db@localhost" uuid="3486ea15-06e4-4c19-8c95-c09bdf2bb5af">
-      <driver-ref>postgresql</driver-ref>
-      <synchronize>true</synchronize>
-      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
-      <jdbc-url>jdbc:postgresql://localhost:5432/dev_db</jdbc-url>
-      <working-dir>$ProjectFileDir$</working-dir>
-      <driver-properties>
-        <property name="options" value="-c timezone=Asia/Jakarta" />
-        <property name="timezone" value="Asia/Jakarta" />
-      </driver-properties>
-    </data-source>
     <data-source source="LOCAL" name="staging-postgres@localhost" uuid="bc10bfb4-06ee-48d6-9c95-02dc928b5fb8">
       <driver-ref>postgresql</driver-ref>
       <synchronize>true</synchronize>
@@ -24,6 +13,13 @@
       <synchronize>true</synchronize>
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
       <jdbc-url>jdbc:postgresql://localhost:15432/dev_db</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+    <data-source source="LOCAL" name="dev_db@localhost" uuid="196968cd-4f8e-4b8d-a28f-ebf367204193">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://localhost:5432/dev_db</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>

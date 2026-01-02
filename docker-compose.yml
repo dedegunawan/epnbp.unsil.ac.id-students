@@ -70,6 +70,31 @@ services:
         soft: 65535
         hard: 65535
 
+  frontend3:
+    build:
+      context: .
+      dockerfile: ./frontend3/Dockerfile
+      args:
+        ENV_FILE: ./env/frontend3.env.production
+    restart: always
+    depends_on:
+      - golang-backend
+    env_file:
+      - env/frontend3.env.production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "127.0.0.1:3132:80"
+    networks:
+      - dev-network
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
 volumes:
   pgdata:
   minio_data:

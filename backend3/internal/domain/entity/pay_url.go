@@ -19,3 +19,5 @@ func (PayUrl) TableName() string {
 }
 
 
+
+
