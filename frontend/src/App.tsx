@@ -30,23 +30,23 @@ const App = () => (
                     {/* OAuth callback tetap berfungsi untuk proses autentikasi */}
                     <Route path="/auth/callback" element={<AuthCallback />} />
 
-                    {/* Temporary: Semua route diarahkan ke Registration Notice */}
-                    <Route path="/" element={<RegistrationNotice />} />
-                    <Route path="/registration-notice" element={<RegistrationNotice />} />
-                    <Route path="/dashboard" element={<Navigate to="/" replace />} />
-                    <Route path="/error" element={<Navigate to="/" replace />} />
-                    
-                    {/* Route authenticated sementara di-comment, semua diarahkan ke Registration Notice */}
-                    {/* <Route element={<Authenticated />}>
+                    {/* Route authenticated */}
+                    <Route element={<Authenticated />}>
                         <Route path="/" element={
                             <StudentBillProvider>
                                 <Index />
                             </StudentBillProvider>
                         } />
                         <Route path="/dashboard" element={<Navigate to="/" replace />} />
-                    </Route> */}
+                    </Route>
 
-                    {/* Semua route lainnya di-redirect ke halaman utama (Registration Notice) */}
+                    {/* Route untuk registration notice */}
+                    {/* <Route path="/registration-notice" element={<RegistrationNotice />} /> */}
+                    
+                    {/* Error page */}
+                    <Route path="/error" element={<ErrorPage />} />
+
+                    {/* Semua route lainnya di-redirect ke halaman utama */}
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </BrowserRouter>
