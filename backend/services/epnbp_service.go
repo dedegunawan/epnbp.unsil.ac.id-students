@@ -65,7 +65,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 		"exp": now.Unix() + 2*3600,
 	}
 
-	utils.Log.Info("GenerateNewPayUrl payload: %v", payload)
+	utils.Log.Infof("GenerateNewPayUrl payload: %v", payload)
 
 	var result struct {
 		PayUrl    string `json:"pay_url"`
@@ -110,7 +110,7 @@ func (es *epnbpService) GenerateNewPayUrl(user models.User, mahasiswa models.Mah
 }
 
 func (es epnbpService) CheckStatusPaidByInvoiceID(invoiceId string) (bool, *time.Time) {
-	utils.Log.Info("CheckStatusPaidByInvoiceID invoiceId: %s", invoiceId)
+	utils.Log.Infof("CheckStatusPaidByInvoiceID invoiceId: %s", invoiceId)
 	result, err := utils.NewEpnbp().SearchByInvoiceID(invoiceId)
 	if err != nil {
 		return false, nil

@@ -10,13 +10,14 @@ import (
 
 var ERROR_TO_FRONTEND = 1
 
-var ErrorOption = ""
+var ErrorOption = 0
 
 func ErrorHandler(c *gin.Context, code int, message string) {
 	opt := 0
-	ErrorOption, err := strconv.Atoi(os.Getenv("ERROR_OPTION"))
+	errorOption, err := strconv.Atoi(os.Getenv("ERROR_OPTION"))
 	if err == nil {
-		opt = ErrorOption
+		opt = errorOption
+		ErrorOption = errorOption
 	}
 
 	Log.Info("ERROR_OPTION : ", ErrorOption)

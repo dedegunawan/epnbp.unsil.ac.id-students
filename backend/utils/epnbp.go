@@ -76,7 +76,7 @@ func (e *epnbp) CreateInvoice(payload map[string]interface{}) (map[string]interf
 		SetBody(formBody).
 		Post(e.AppUrl + "/api/invoices/create")
 	if err != nil {
-		Log.Info("Error creating invoice %v", err.Error())
+		Log.Infof("Error creating invoice %v", err.Error())
 		return nil, fmt.Errorf("gagal mengirim request: %w", err)
 	}
 
@@ -110,7 +110,7 @@ func (e *epnbp) SearchByInvoiceID(invoiceId string) (map[string]interface{}, err
 		SetQueryParam("invoice_id", invoiceId).
 		Get(e.AppUrl + "/api/virtual-accounts/search-invoice")
 	if err != nil {
-		Log.Info("Error creating search invoice %v", err.Error())
+		Log.Infof("Error creating search invoice %v", err.Error())
 		return nil, fmt.Errorf("gagal mengirim request: %w", err)
 	}
 
@@ -144,7 +144,7 @@ func (e *epnbp) SearchByVirtualAccount(virtualAccount string) (map[string]interf
 		SetQueryParam("va", virtualAccount).
 		Get(e.AppUrl + "/api/virtual-accounts/search-va")
 	if err != nil {
-		Log.Info("Error creating search virtual account %v", err.Error())
+		Log.Infof("Error creating search virtual account %v", err.Error())
 		return nil, fmt.Errorf("gagal mengirim request: %w", err)
 	}
 

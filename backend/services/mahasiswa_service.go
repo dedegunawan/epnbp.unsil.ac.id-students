@@ -202,7 +202,7 @@ func (s *mahasiswaService) CreateFromSimak(mhswID string) error {
 	jsonBytes, err := json.Marshal(mahasiswaData.Data)
 	if err != nil {
 		// Tangani error jika gagal marshal
-		return fmt.Errorf("Gagal encode JSON mahasiswa:", err)
+		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
 	}
 
 	// 5. Sinkron Mahasiswa
@@ -306,7 +306,7 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	jsonBytes, err := json.Marshal(mhswMaster)
 	if err != nil {
 		// Tangani error jika gagal marshal
-		return fmt.Errorf("Gagal encode JSON mahasiswa:", err)
+		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
 	}
 
 	// 5. Sinkron Mahasiswa

@@ -73,7 +73,7 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 	})
 
 	if err != nil {
-		utils.Log.Info("Error on send callback %v", err.Error())
+		utils.Log.Infof("Error on send callback %v", err.Error())
 		return fmt.Errorf("gagal mengirim request: %w", err)
 	}
 
@@ -150,9 +150,9 @@ func (s *sintesys) ScanNewCallback() {
 }
 
 func (s *sintesys) ProccessFromCallback(callback models.PaymentCallback) (bool, string, error) {
-	utils.Log.Info("Sampe kesini: %v")
+	utils.Log.Info("Sampe kesini")
 	encodedString, err := s.FindDataEncoded(callback.Request)
-	utils.Log.Info("after FindDataEncoded %v", encodedString)
+	utils.Log.Infof("after FindDataEncoded %v", encodedString)
 	if err != nil {
 		return false, "", err
 	}

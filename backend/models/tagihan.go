@@ -231,6 +231,6 @@ func MigrateTagihan(db *gorm.DB) {
 
 	var count int64
 	db.Model(&StudentBill{}).Count(&count)
-	utils.Log.Info("Student Bills migrated: %d", count)
+	utils.Log.Infof("Student Bills migrated: %d", count)
 
 }

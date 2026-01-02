@@ -3,7 +3,7 @@ import { Calendar, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 
 const RegistrationNotice = () => {
   // Tanggal dan waktu registrasi
-  const startDate = new Date("2026-01-02T09:00:00+07:00");
+  const startDate = new Date("2026-01-02T12:00:00+07:00");
   const endDate = new Date("2026-01-09T23:59:00+07:00");
   const now = new Date();
 

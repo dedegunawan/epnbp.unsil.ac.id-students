@@ -21,7 +21,7 @@ func ConnectDatabasePnbp() {
 	)
 
 	utils.Log.Info("Connecting Pnbp Database")
-	utils.Log.Info("Connecting MySQL at %s:%s db=%s user=%s",
+	utils.Log.Infof("Connecting MySQL at %s:%s db=%s user=%s",
 		os.Getenv("EPNBP_DB_HOST"), os.Getenv("EPNBP_DB_PORT"),
 		os.Getenv("EPNBP_DB_NAME"), os.Getenv("EPNBP_DB_USER"))
 

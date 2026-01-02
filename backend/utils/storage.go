@@ -36,7 +36,7 @@ func InitStorage() {
 		Secure: useSSL,
 	})
 	if err != nil {
-		Log.Fatal("❌ Failed to connect to MinIO: %v", err)
+		Log.Fatalf("❌ Failed to connect to MinIO: %v", err)
 	}
 
 	MinioClient = client
