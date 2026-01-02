@@ -27,6 +27,16 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
+      // Ensure assets are referenced correctly with base path
+      assetsDir: 'assets',
+      rollupOptions: {
+        output: {
+          // Ensure chunk names are consistent
+          chunkFileNames: 'assets/js/[name]-[hash].js',
+          entryFileNames: 'assets/js/[name]-[hash].js',
+          assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
+        },
+      },
     },
   };
 });

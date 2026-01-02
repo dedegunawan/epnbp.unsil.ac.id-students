@@ -13,9 +13,12 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
+  // Get base path from environment or default to /monitoring/
+  const basePath = import.meta.env.VITE_BASE_URL || '/monitoring/';
+  
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={basePath}>
         <Routes>
           <Route path="/" element={<PaymentStatus />} />
         </Routes>

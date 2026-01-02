@@ -81,6 +81,8 @@ const PaymentStatus = () => {
       params.append("page", filters.page.toString());
       params.append("limit", filters.limit.toString());
 
+      // API baseURL is already set in axios config
+      // Use /v1/payment-status (axios will prepend baseURL)
       const response = await api.get(`/v1/payment-status?${params.toString()}`, {
         headers: token ? {
           Authorization: `Bearer ${token}`,
