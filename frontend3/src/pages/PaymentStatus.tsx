@@ -66,9 +66,17 @@ const PaymentStatus = () => {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get token from localStorage or sessionStorage
-    const storedToken = localStorage.getItem("token") || sessionStorage.getItem("token");
+    // Get token from localStorage using VITE_TOKEN_KEY (same as frontend)
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'token';
+    const storedToken = localStorage.getItem(tokenKey) || sessionStorage.getItem(tokenKey);
     setToken(storedToken);
+    
+    // Debug: log token status
+    if (import.meta.env.DEV) {
+      console.log('Token key:', tokenKey);
+      console.log('Token found:', !!storedToken);
+      console.log('API URL:', import.meta.env.VITE_API_URL);
+    }
   }, []);
 
   const { data, isLoading, error, refetch } = useQuery<PaymentStatusResponse>({
@@ -83,10 +91,14 @@ const PaymentStatus = () => {
 
       // API baseURL is already set in axios config
       // Use /v1/payment-status (axios will prepend baseURL)
+      // Ensure token is always sent if available
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await api.get(`/v1/payment-status?${params.toString()}`, {
-        headers: token ? {
-          Authorization: `Bearer ${token}`,
-        } : {},
+        headers,
       });
       return response.data;
     },

@@ -3,7 +3,16 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd());
+  // Load env vars from .env file in current working directory
+  // In Docker, this will be /app/.env
+  const env = loadEnv(mode, process.cwd(), '');
+
+  // Debug: log env vars in development
+  if (mode === 'development') {
+    console.log('Vite Config - Mode:', mode);
+    console.log('Vite Config - VITE_API_URL:', env.VITE_API_URL);
+    console.log('Vite Config - VITE_BASE_URL:', env.VITE_BASE_URL);
+  }
 
   return {
     base: env.VITE_BASE_URL || '/',

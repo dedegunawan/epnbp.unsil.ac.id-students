@@ -15,8 +15,12 @@ ARG ENV_FILE=env/frontend3.env.staging
 COPY ${ENV_FILE} .env  
 # akan menjadi /app/.env di dalam container
 
-# Build the app
-RUN npm run build
+# Debug: show env file content (remove in production if needed)
+RUN echo "=== Environment file content ===" && cat .env || echo "No .env file found"
+
+# Build the app with production mode to ensure env vars are loaded
+# Vite will use .env file and load variables prefixed with VITE_
+RUN npm run build -- --mode production
 
 # Stage 2: Serve with nginx
 FROM nginx:alpine
