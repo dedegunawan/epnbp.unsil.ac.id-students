@@ -34,7 +34,7 @@ type MahasiswaMaster struct {
 
 	// Referensi eksternal
 	ExternalRef     string         `gorm:"column:external_ref;size:191"`
-	UKT             int64          `gorm:"column:ukt"` // asumsi: nominal dalam rupiah
+	UKT             float64        `gorm:"column:ukt;type:decimal(10,2)"` // Kelompok UKT (decimal seperti 2.00)
 	MasterTagihanID uint           `gorm:"column:master_tagihan_id"`
 	MasterTagihan   *MasterTagihan `gorm:"foreignKey:MasterTagihanID;references:ID"`
 

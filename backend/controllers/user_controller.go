@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -202,30 +203,190 @@ func Me(c *gin.Context) {
 		return
 	}
 
-	ssoID := c.GetString("sso_id")
-	utils.Log.Info("Endpoint /me: Data mahasiswa", map[string]interface{}{
-		"userID":  user.ID,
+	// Selalu sinkronkan data mahasiswa dari mahasiswa_masters saat endpoint /me dipanggil
+	// Ini memastikan data selalu up-to-date dari database PNBP
+	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
+	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
+
+	utils.Log.Info("Endpoint /me: Sinkronkan data mahasiswa dari mahasiswa_masters", map[string]interface{}{
 		"mhswID":  mahasiswa.MhswID,
-		"nama":    mahasiswa.Nama,
-		"ssoID":   ssoID,
-		"BIPOTID": mahasiswa.BIPOTID,
-		"UKT":     mahasiswa.UKT,
-		"ProdiID": mahasiswa.ProdiID,
+		"prodiID": mahasiswa.ProdiID,
 	})
 
-	semester, err := semesterSaatIniMahasiswa(mahasiswa)
+	// Sync dari mahasiswa_masters (selalu update, tidak peduli sudah ada atau belum)
+	errSync := mahasiswaService.CreateFromMasterMahasiswa(mahasiswa.MhswID)
+	if errSync == nil {
+		// Reload mahasiswa dengan relasi setelah sync
+		mahasiswa, _ = mahasiswaRepo.FindByMhswID(mahasiswa.MhswID)
+		utils.Log.Info("Endpoint /me: Data mahasiswa berhasil di-sync dari mahasiswa_masters", map[string]interface{}{
+			"mhswID":  mahasiswa.MhswID,
+			"prodiID": mahasiswa.ProdiID,
+			"nama":    mahasiswa.Nama,
+		})
+	} else {
+		utils.Log.Warn("Endpoint /me: Gagal sync mahasiswa dari mahasiswa_masters", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"error":  errSync.Error(),
+		})
+	}
+
+	// Jika masih kosong, ambil langsung dari database PNBP
+	if mahasiswa != nil && (mahasiswa.ProdiID == 0 || mahasiswa.Prodi.ID == 0 || mahasiswa.Prodi.KodeProdi == "") {
+		utils.Log.Info("Endpoint /me: Prodi masih kosong, ambil langsung dari database PNBP", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+		})
+
+		// Ambil dari mahasiswa_masters
+		var mhswMaster models.MahasiswaMaster
+		errMaster := database.DBPNBP.Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
+		if errMaster == nil && mhswMaster.ProdiID > 0 {
+			// Ambil prodi dari database PNBP
+			var prodiPnbp models.ProdiPnbp
+			errProdi := database.DBPNBP.Where("id = ?", mhswMaster.ProdiID).First(&prodiPnbp).Error
+			if errProdi == nil {
+				// Ambil fakultas dari database PNBP
+				var fakultasPnbp models.FakultasPnbp
+				errFakultas := database.DBPNBP.Where("id = ?", prodiPnbp.FakultasID).First(&fakultasPnbp).Error
+				if errFakultas == nil {
+					// Sinkron ke database lokal
+					var prodi models.Prodi
+					var fakultas models.Fakultas
+
+					// Sinkron fakultas
+					database.DB.FirstOrCreate(&fakultas, models.Fakultas{
+						KodeFakultas: fakultasPnbp.KodeFakultas,
+					})
+					database.DB.Model(&fakultas).Update("nama_fakultas", fakultasPnbp.NamaFakultas)
+
+					// Sinkron prodi
+					database.DB.FirstOrCreate(&prodi, models.Prodi{
+						KodeProdi:  prodiPnbp.KodeProdi,
+						FakultasID: fakultas.ID,
+					})
+					database.DB.Model(&prodi).Updates(models.Prodi{
+						NamaProdi:  prodiPnbp.NamaProdi,
+						FakultasID: fakultas.ID,
+					})
+
+					// Update mahasiswa dengan ProdiID yang benar
+					database.DB.Model(mahasiswa).Update("prodi_id", prodi.ID)
+
+					// Reload mahasiswa dengan relasi
+					mahasiswa, _ = mahasiswaRepo.FindByMhswID(mahasiswa.MhswID)
+
+					utils.Log.Info("Endpoint /me: Prodi dan Fakultas berhasil di-sync dari database PNBP", map[string]interface{}{
+						"mhswID":    mahasiswa.MhswID,
+						"prodiID":   prodi.ID,
+						"kodeProdi": prodi.KodeProdi,
+					})
+				}
+			}
+		}
+	}
+
+	// Ambil data langsung dari mahasiswa_masters di database PNBP, bukan dari tabel mahasiswa
+	var mhswMaster models.MahasiswaMaster
+	errMaster := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
+	if errMaster != nil {
+		utils.Log.Error("Endpoint /me: Gagal mengambil data dari mahasiswa_masters", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"error":  errMaster.Error(),
+		})
+		// Fallback ke data dari tabel mahasiswa jika tidak ditemukan
+		c.JSON(200, gin.H{
+			"id":        user.ID,
+			"name":      user.Name,
+			"email":     user.Email,
+			"sso_id":    c.GetString("sso_id"),
+			"is_active": user.IsActive,
+			"mahasiswa": mahasiswa,
+			"semester":  0,
+		})
+		return
+	}
+
+	// Ambil prodi dan fakultas dari database PNBP
+	var prodiPnbp models.ProdiPnbp
+	var fakultasPnbp models.FakultasPnbp
+	if mhswMaster.ProdiID > 0 {
+		database.DBPNBP.Where("id = ?", mhswMaster.ProdiID).First(&prodiPnbp)
+		if prodiPnbp.ID > 0 && prodiPnbp.FakultasID > 0 {
+			database.DBPNBP.Where("id = ?", prodiPnbp.FakultasID).First(&fakultasPnbp)
+		}
+	}
+
+	// Hitung semester dari mahasiswa_masters
+	semester := 0
+	semester, err := semesterSaatIniMahasiswaFromMaster(&mhswMaster, mahasiswa)
 	if err != nil {
 		utils.Log.Error("Endpoint /me: Gagal menghitung semester", map[string]interface{}{
 			"mhswID": mahasiswa.MhswID,
 			"error":  err.Error(),
 		})
-		semester = 0 // Jika ada error, set semester ke 0
-	} else {
-		utils.Log.Info("Endpoint /me: Semester berhasil dihitung", map[string]interface{}{
-			"mhswID":   mahasiswa.MhswID,
-			"semester": semester,
-		})
+		semester = 0
 	}
+
+	// Format UKT kelompok (decimal ke int, lalu ke string)
+	kelompokUKT := strconv.Itoa(int(mhswMaster.UKT))
+
+	// Parse full_data untuk mendapatkan parsed object
+	var parsedData map[string]interface{}
+	if mahasiswa.FullData != "" {
+		if err := json.Unmarshal([]byte(mahasiswa.FullData), &parsedData); err != nil {
+			utils.Log.Warn("Endpoint /me: Gagal parse FullData", map[string]interface{}{
+				"mhswID": mahasiswa.MhswID,
+				"error":  err.Error(),
+			})
+			parsedData = make(map[string]interface{})
+		}
+	} else {
+		parsedData = make(map[string]interface{})
+	}
+
+	// Update parsed data dengan data dari mahasiswa_masters
+	parsedData["TahunMasuk"] = mhswMaster.TahunMasuk
+	parsedData["angkatan"] = strconv.Itoa(mhswMaster.TahunMasuk) // Frontend menggunakan 'angkatan' sebagai string
+	parsedData["UKT"] = int(mhswMaster.UKT)
+	parsedData["master_tagihan_id"] = mhswMaster.MasterTagihanID
+
+	// Buat response mahasiswa dari mahasiswa_masters
+	mahasiswaResponse := gin.H{
+		"id":          mahasiswa.ID,
+		"mhsw_id":     mhswMaster.StudentID,
+		"nama":        mhswMaster.NamaLengkap,
+		"prodi_id":    mahasiswa.ProdiID,                             // Tetap gunakan prodi_id dari tabel mahasiswa untuk relasi
+		"kel_ukt":     kelompokUKT,                                   // Kelompok UKT dari mahasiswa_masters
+		"bipot_id":    fmt.Sprintf("%d", mhswMaster.MasterTagihanID), // master_tagihan_id
+		"email":       mhswMaster.Email,
+		"tahun_masuk": mhswMaster.TahunMasuk, // Tahun Masuk langsung dari mahasiswa_masters
+		"full_data":   mahasiswa.FullData,    // Tetap gunakan FullData dari tabel mahasiswa
+		"parsed":      parsedData,            // Parsed data dengan TahunMasuk dan angkatan
+		"prodi": gin.H{
+			"id":          mahasiswa.Prodi.ID,
+			"kode_prodi":  prodiPnbp.KodeProdi,
+			"nama_prodi":  prodiPnbp.NamaProdi,
+			"fakultas_id": mahasiswa.Prodi.FakultasID,
+			"fakultas": gin.H{
+				"id":            mahasiswa.Prodi.Fakultas.ID,
+				"kode_fakultas": fakultasPnbp.KodeFakultas,
+				"nama_fakultas": fakultasPnbp.NamaFakultas,
+				"prodis":        nil,
+			},
+			"mahasiswas": nil,
+		},
+	}
+
+	ssoID := c.GetString("sso_id")
+	utils.Log.Info("Endpoint /me: Data mahasiswa dari mahasiswa_masters", map[string]interface{}{
+		"userID":      user.ID,
+		"mhswID":      mhswMaster.StudentID,
+		"nama":        mhswMaster.NamaLengkap,
+		"tahunMasuk":  mhswMaster.TahunMasuk,
+		"kelompokUKT": kelompokUKT,
+		"semester":    semester,
+		"prodiID":     prodiPnbp.ID,
+		"fakultasID":  fakultasPnbp.ID,
+	})
 
 	response := gin.H{
 		"id":        user.ID,
@@ -233,7 +394,7 @@ func Me(c *gin.Context) {
 		"email":     user.Email,
 		"sso_id":    ssoID,
 		"is_active": user.IsActive,
-		"mahasiswa": mahasiswa,
+		"mahasiswa": mahasiswaResponse,
 		"semester":  semester,
 	}
 
@@ -370,6 +531,122 @@ func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
 
 	utils.Log.Info("semesterSaatIniMahasiswa: Semester berhasil dihitung", map[string]interface{}{
 		"mhswID":       mahasiswa.MhswID,
+		"tahunIDAwal":  tahunIDAwal,
+		"academicYear": activeYear.AcademicYear,
+		"semester":     semester,
+	})
+
+	return semester, nil
+}
+
+// semesterSaatIniMahasiswaFromMaster menghitung semester langsung dari mahasiswa_masters di database PNBP
+func semesterSaatIniMahasiswaFromMaster(mhswMaster *models.MahasiswaMaster, mahasiswa *models.Mahasiswa) (int, error) {
+	if mhswMaster == nil {
+		return 0, fmt.Errorf("mahasiswa master tidak ditemukan")
+	}
+	if mhswMaster.StudentID == "" {
+		return 0, fmt.Errorf("StudentID kosong")
+	}
+
+	utils.Log.Info("semesterSaatIniMahasiswaFromMaster: Memulai perhitungan semester", map[string]interface{}{
+		"mhswID": mhswMaster.StudentID,
+		"nama":   mhswMaster.NamaLengkap,
+	})
+
+	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
+
+	// Panggil repository untuk ambil FinanceYear aktif (berisi budget_periods.kode)
+	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
+	if err != nil {
+		utils.Log.Error("semesterSaatIniMahasiswaFromMaster: Gagal ambil FinanceYear aktif", map[string]interface{}{
+			"mhswID": mhswMaster.StudentID,
+			"error":  err.Error(),
+		})
+		return 0, fmt.Errorf("Tahun aktif tidak ditemukan: %w", err)
+	}
+
+	utils.Log.Info("semesterSaatIniMahasiswaFromMaster: FinanceYear aktif ditemukan", map[string]interface{}{
+		"mhswID":       mhswMaster.StudentID,
+		"academicYear": activeYear.AcademicYear,
+		"code":         activeYear.Code,
+		"description":  activeYear.Description,
+	})
+
+	var tahunIDAwal string
+
+	if mhswMaster.SemesterMasukID > 0 {
+		// SemesterMasukID adalah referensi ke budget_periods.id
+		// Ambil budget_periods.kode sebagai tahunIDAwal
+		var budgetPeriod models.BudgetPeriod
+		errBudgetPeriod := database.DBPNBP.Where("id = ?", mhswMaster.SemesterMasukID).First(&budgetPeriod).Error
+		if errBudgetPeriod == nil && budgetPeriod.Kode != "" {
+			tahunIDAwal = budgetPeriod.Kode
+			utils.Log.Info("semesterSaatIniMahasiswaFromMaster: TahunID awal diambil dari budget_periods berdasarkan SemesterMasukID", map[string]interface{}{
+				"mhswID":           mhswMaster.StudentID,
+				"SemesterMasukID":  mhswMaster.SemesterMasukID,
+				"budgetPeriodID":   budgetPeriod.ID,
+				"budgetPeriodKode": budgetPeriod.Kode,
+				"tahunIDAwal":      tahunIDAwal,
+			})
+		} else {
+			utils.Log.Warn("semesterSaatIniMahasiswaFromMaster: Budget period tidak ditemukan berdasarkan SemesterMasukID, fallback ke TahunMasuk", map[string]interface{}{
+				"mhswID":          mhswMaster.StudentID,
+				"SemesterMasukID": mhswMaster.SemesterMasukID,
+				"error":           errBudgetPeriod,
+			})
+			// Fallback: gunakan TahunMasuk dengan default semester 1
+			if mhswMaster.TahunMasuk > 0 {
+				tahunIDAwal = fmt.Sprintf("%d1", mhswMaster.TahunMasuk)
+				utils.Log.Info("semesterSaatIniMahasiswaFromMaster: TahunID awal dibuat dari TahunMasuk (fallback)", map[string]interface{}{
+					"mhswID":      mhswMaster.StudentID,
+					"TahunMasuk":  mhswMaster.TahunMasuk,
+					"tahunIDAwal": tahunIDAwal,
+				})
+			} else {
+				utils.Log.Error("semesterSaatIniMahasiswaFromMaster: TahunMasuk juga tidak ditemukan", map[string]interface{}{
+					"mhswID": mhswMaster.StudentID,
+				})
+				return 0, fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswMaster.StudentID)
+			}
+		}
+	} else {
+		// Fallback: gunakan TahunMasuk dengan default semester 1
+		if mhswMaster.TahunMasuk > 0 {
+			tahunIDAwal = fmt.Sprintf("%d1", mhswMaster.TahunMasuk)
+			utils.Log.Info("semesterSaatIniMahasiswaFromMaster: TahunID awal dibuat dari TahunMasuk (SemesterMasukID tidak ada)", map[string]interface{}{
+				"mhswID":      mhswMaster.StudentID,
+				"TahunMasuk":  mhswMaster.TahunMasuk,
+				"tahunIDAwal": tahunIDAwal,
+			})
+		} else {
+			utils.Log.Error("semesterSaatIniMahasiswaFromMaster: TahunMasuk tidak ditemukan", map[string]interface{}{
+				"mhswID": mhswMaster.StudentID,
+			})
+			return 0, fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswMaster.StudentID)
+		}
+	}
+
+	utils.Log.Info("semesterSaatIniMahasiswaFromMaster: Memanggil HitungSemesterSaatIni", map[string]interface{}{
+		"mhswID":       mhswMaster.StudentID,
+		"tahunIDAwal":  tahunIDAwal,
+		"academicYear": activeYear.AcademicYear,
+	})
+
+	semester, err := tagihanService.HitungSemesterSaatIni(tahunIDAwal, activeYear.AcademicYear)
+	if err != nil {
+		utils.Log.Error("semesterSaatIniMahasiswaFromMaster: Gagal hitung semester", map[string]interface{}{
+			"mhswID":       mhswMaster.StudentID,
+			"tahunIDAwal":  tahunIDAwal,
+			"academicYear": activeYear.AcademicYear,
+			"error":        err.Error(),
+		})
+		return 0, err
+	}
+
+	utils.Log.Info("semesterSaatIniMahasiswaFromMaster: Semester berhasil dihitung", map[string]interface{}{
+		"mhswID":       mhswMaster.StudentID,
 		"tahunIDAwal":  tahunIDAwal,
 		"academicYear": activeYear.AcademicYear,
 		"semester":     semester,

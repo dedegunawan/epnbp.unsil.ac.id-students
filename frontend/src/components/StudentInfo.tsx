@@ -130,7 +130,7 @@ export const StudentInfo = () => {
       kel_ukt: m?.kel_ukt ?? "-",
       jurusan: m?.prodi?.nama_prodi ?? "-",
       //semester: "-", // Anda bisa sesuaikan jika ada
-      tahunMasuk: m?.parsed?.angkatan, // Ambil dari profile jika tersedia
+      tahunMasuk: m?.parsed?.TahunMasuk ?? m?.parsed?.angkatan, // Ambil dari profile jika tersedia
       email: profile?.email, // Jika profile punya alamat
       status: m?.parsed?.StatusMhswID,
       activeYear: tahun?.description,

@@ -56,20 +56,15 @@ func (s *mahasiswaService) Delete(id uuid.UUID) error {
 }
 
 func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
-	mhsw, err := s.GetByMhswID(mhswID)
-	if err == nil && mhsw != nil {
-		utils.Log.Info("Mahasiswa sudah ada di database, skip create", "mhswID", mhswID)
-		return nil
-	}
-
+	// Selalu sinkronkan dari mahasiswa_masters, tidak peduli apakah sudah ada atau belum
+	// Ini memastikan data selalu up-to-date
 	utils.Log.Info("Memulai CreateFromMasterMahasiswa", map[string]interface{}{
 		"mhswID": mhswID,
-		"error":  err,
 	})
 
 	// 1. Ambil data mahasiswa dari Master Mahasiswa
 	var mhswMaster models.MahasiswaMaster
-	err = database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).First(&mhswMaster).Error
+	err := database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).First(&mhswMaster).Error
 	if err != nil {
 		// Jika record tidak ditemukan, return error dengan detail
 		utils.Log.Error("Mahasiswa tidak ditemukan di mahasiswa_masters", map[string]interface{}{
@@ -270,11 +265,9 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	// Tambahkan data dari mahasiswa_masters untuk referensi
 	fullDataMap["mahasiswa_master_id"] = mhswMaster.ID
 	fullDataMap["master_tagihan_id"] = mhswMaster.MasterTagihanID
-
-	jsonBytes, err := json.Marshal(fullDataMap)
-	if err != nil {
-		// Tangani error jika gagal marshal
-		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
+	// Simpan master_tagihan_id juga di field BIPOTID untuk kompatibilitas (BIPOTID tidak digunakan lagi)
+	if mhswMaster.MasterTagihanID > 0 {
+		fullDataMap["BIPOTID"] = mhswMaster.MasterTagihanID
 	}
 
 	// 5. Sinkron Mahasiswa
@@ -295,51 +288,76 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 		"id":      mahasiswa.ID,
 	})
 
-	// set bipotid
-	BIPOTID := 0
-	if mhswMaster.MasterTagihanID != 0 && mhswMaster.MasterTagihan != nil {
-		BIPOTID = int(mhswMaster.MasterTagihan.BipotID)
+	// mahasiswa_masters.UKT adalah kelompok UKT (decimal seperti 2.00), bukan nominal
+	// Nominal UKT diambil dari detail_tagihan berdasarkan master_tagihan_id dan kelompok UKT
+	// Konversi UKT dari float64 ke int, lalu ke string
+	kelompokUKT := strconv.Itoa(int(mhswMaster.UKT))
+	masterTagihanIDStr := ""
+	if mhswMaster.MasterTagihanID > 0 {
+		masterTagihanIDStr = strconv.Itoa(int(mhswMaster.MasterTagihanID))
 	}
 
-	// Ambil kelompok UKT (kel_ukt) dari detail_tagihan berdasarkan MasterTagihanID dan UKT nominal
-	// Catatan: mhswMaster.UKT adalah nominal (int64), tapi mahasiswa.UKT adalah kelompok UKT (string: "1"-"7")
-	kelompokUKT := ""
-	if mhswMaster.MasterTagihanID != 0 {
+	// Ambil nominal UKT dari detail_tagihan berdasarkan master_tagihan_id dan kelompok UKT
+	nominalUKT := int64(0)
+	if mhswMaster.MasterTagihanID > 0 {
 		var detailTagihan models.DetailTagihan
-		// Cari detail_tagihan yang sesuai dengan MasterTagihanID dan nominal UKT
-		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKT).
 			First(&detailTagihan).Error
-		if errDetail == nil && detailTagihan.KelUKT != nil {
-			kelompokUKT = *detailTagihan.KelUKT
-			utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", "mhswID", mhswMaster.StudentID, "kelompokUKT", kelompokUKT, "nominalUKT", mhswMaster.UKT)
+		if errDetail == nil {
+			nominalUKT = detailTagihan.Nominal
+			utils.Log.Info("Nominal UKT ditemukan dari detail_tagihan", map[string]interface{}{
+				"mhswID":          mhswMaster.StudentID,
+				"masterTagihanID": mhswMaster.MasterTagihanID,
+				"kelompokUKT":     kelompokUKT,
+				"nominalUKT":      nominalUKT,
+			})
 		} else {
-			// Fallback: jika tidak ditemukan dengan nominal, coba cari berdasarkan MasterTagihanID saja
-			var detailTagihanFallback models.DetailTagihan
+			// Fallback: cari berdasarkan master_tagihan_id saja (ambil yang pertama)
 			errFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
-				First(&detailTagihanFallback).Error
-			if errFallback == nil && detailTagihanFallback.KelUKT != nil {
-				kelompokUKT = *detailTagihanFallback.KelUKT
-				utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match nominal)", "mhswID", mhswMaster.StudentID, "kelompokUKT", kelompokUKT, "nominalUKT", mhswMaster.UKT)
+				First(&detailTagihan).Error
+			if errFallback == nil {
+				nominalUKT = detailTagihan.Nominal
+				utils.Log.Warn("Nominal UKT diambil dari detail_tagihan fallback (tidak match kelompok)", map[string]interface{}{
+					"mhswID":          mhswMaster.StudentID,
+					"masterTagihanID": mhswMaster.MasterTagihanID,
+					"kelompokUKT":     kelompokUKT,
+					"nominalUKT":      nominalUKT,
+				})
 			} else {
-				utils.Log.Warn("Kelompok UKT tidak ditemukan di detail_tagihan, menggunakan nominal sebagai string", "mhswID", mhswMaster.StudentID, "nominalUKT", mhswMaster.UKT)
-				// Fallback terakhir: gunakan nominal sebagai string (untuk kompatibilitas)
-				kelompokUKT = strconv.Itoa(int(mhswMaster.UKT))
+				utils.Log.Warn("Nominal UKT tidak ditemukan di detail_tagihan", map[string]interface{}{
+					"mhswID":          mhswMaster.StudentID,
+					"masterTagihanID": mhswMaster.MasterTagihanID,
+					"kelompokUKT":     kelompokUKT,
+					"error":           errDetail,
+				})
 			}
 		}
-	} else {
-		// Jika tidak ada MasterTagihanID, gunakan nominal sebagai string
-		kelompokUKT = strconv.Itoa(int(mhswMaster.UKT))
-		utils.Log.Warn("MasterTagihanID tidak ada, menggunakan nominal UKT sebagai kelompok", "mhswID", mhswMaster.StudentID, "UKT", kelompokUKT)
+	}
+
+	utils.Log.Info("Data dari mahasiswa_masters", map[string]interface{}{
+		"mhswID":          mhswMaster.StudentID,
+		"masterTagihanID": mhswMaster.MasterTagihanID,
+		"kelompokUKT":     kelompokUKT,
+		"nominalUKT":      nominalUKT,
+	})
+
+	// Update FullData dengan nominal UKT
+	fullDataMap["UKT"] = int(mhswMaster.UKT) // Simpan kelompok UKT sebagai int (bukan float)
+	fullDataMap["UKTNominal"] = nominalUKT   // Simpan nominal UKT dari detail_tagihan
+	jsonBytes, err := json.Marshal(fullDataMap)
+	if err != nil {
+		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
 	}
 
 	// Update data yang lain (nama, email, dll)
-	// UKT (kelompok) diambil dari detail_tagihan berdasarkan MasterTagihanID dan nominal UKT
+	// UKT adalah kelompok UKT dari mahasiswa_masters
+	// BIPOTID tidak digunakan lagi, simpan master_tagihan_id di BIPOTID field untuk kompatibilitas
 	err = db.Model(&mahasiswa).Updates(models.Mahasiswa{
 		Nama:     mhswMaster.NamaLengkap,
 		Email:    mhswMaster.Email,
 		ProdiID:  prodi.ID,
-		BIPOTID:  strconv.Itoa(BIPOTID),
-		UKT:      kelompokUKT, // Kelompok UKT dari detail_tagihan, bukan nominal
+		BIPOTID:  masterTagihanIDStr, // Simpan master_tagihan_id di field BIPOTID untuk kompatibilitas
+		UKT:      kelompokUKT,        // UKT kelompok dari mahasiswa_masters
 		FullData: string(jsonBytes),
 	}).Error
 	if err != nil {
