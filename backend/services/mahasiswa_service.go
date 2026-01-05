@@ -290,25 +290,54 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 
 	// mahasiswa_masters.UKT adalah kelompok UKT (decimal seperti 2.00), bukan nominal
 	// Nominal UKT diambil dari detail_tagihan berdasarkan master_tagihan_id dan kelompok UKT
-	// Konversi UKT dari float64 ke int, lalu ke string
-	kelompokUKT := strconv.Itoa(int(mhswMaster.UKT))
+	// mahasiswa_masters.ukt = detail_tagihan.kel_ukt (harus sama persis)
 	masterTagihanIDStr := ""
 	if mhswMaster.MasterTagihanID > 0 {
 		masterTagihanIDStr = strconv.Itoa(int(mhswMaster.MasterTagihanID))
 	}
 
 	// Ambil nominal UKT dari detail_tagihan berdasarkan master_tagihan_id dan kelompok UKT
+	// mahasiswa_masters.ukt = detail_tagihan.kel_ukt (harus sama persis)
+	// Gunakan CAST untuk membandingkan float dengan string di database
 	nominalUKT := int64(0)
 	if mhswMaster.MasterTagihanID > 0 {
 		var detailTagihan models.DetailTagihan
-		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKT).
+
+		// Query dengan CAST untuk membandingkan float dengan string
+		// CAST mahasiswa_masters.ukt (float) ke string dan bandingkan dengan detail_tagihan.kel_ukt (string)
+		// Atau CAST detail_tagihan.kel_ukt (string) ke float dan bandingkan dengan mahasiswa_masters.ukt (float)
+		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND CAST(kel_ukt AS DECIMAL(10,2)) = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
 			First(&detailTagihan).Error
+
+		if errDetail != nil {
+			// Fallback: coba dengan format string langsung (beberapa format)
+			// Format 1: int sebagai string ("2")
+			kelompokUKTInt := strconv.Itoa(int(mhswMaster.UKT))
+			errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTInt).
+				First(&detailTagihan).Error
+
+			if errDetail != nil {
+				// Format 2: float dengan 2 desimal ("2.00")
+				kelompokUKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
+				errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTFloat).
+					First(&detailTagihan).Error
+			}
+
+			if errDetail != nil {
+				// Format 3: tanpa desimal ("2")
+				kelompokUKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
+				errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTNoDecimal).
+					First(&detailTagihan).Error
+			}
+		}
+
 		if errDetail == nil {
 			nominalUKT = detailTagihan.Nominal
 			utils.Log.Info("Nominal UKT ditemukan dari detail_tagihan", map[string]interface{}{
 				"mhswID":          mhswMaster.StudentID,
 				"masterTagihanID": mhswMaster.MasterTagihanID,
-				"kelompokUKT":     kelompokUKT,
+				"uktValue":        mhswMaster.UKT,
+				"kelompokUKT":     detailTagihan.KelUKT,
 				"nominalUKT":      nominalUKT,
 			})
 		} else {
@@ -320,19 +349,24 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 				utils.Log.Warn("Nominal UKT diambil dari detail_tagihan fallback (tidak match kelompok)", map[string]interface{}{
 					"mhswID":          mhswMaster.StudentID,
 					"masterTagihanID": mhswMaster.MasterTagihanID,
-					"kelompokUKT":     kelompokUKT,
+					"uktValue":        mhswMaster.UKT,
+					"kelompokUKT":     detailTagihan.KelUKT,
 					"nominalUKT":      nominalUKT,
+					"error":           errDetail,
 				})
 			} else {
 				utils.Log.Warn("Nominal UKT tidak ditemukan di detail_tagihan", map[string]interface{}{
 					"mhswID":          mhswMaster.StudentID,
 					"masterTagihanID": mhswMaster.MasterTagihanID,
-					"kelompokUKT":     kelompokUKT,
+					"uktValue":        mhswMaster.UKT,
 					"error":           errDetail,
 				})
 			}
 		}
 	}
+
+	// Konversi UKT untuk disimpan di field UKT mahasiswa (format int sebagai string)
+	kelompokUKT := strconv.Itoa(int(mhswMaster.UKT))
 
 	utils.Log.Info("Data dari mahasiswa_masters", map[string]interface{}{
 		"mhswID":          mhswMaster.StudentID,

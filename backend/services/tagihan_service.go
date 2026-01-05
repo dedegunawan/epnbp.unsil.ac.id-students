@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
@@ -247,25 +248,46 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 		})
 	}
 
-	// Ambil detail_tagihan untuk mendapatkan kel_ukt berdasarkan master_tagihan_id dan UKT nominal
+	// Ambil kelompok UKT dari mahasiswa_masters.ukt
+	// mahasiswa_masters.ukt = detail_tagihan.kel_ukt (harus sama persis)
+	// Gunakan CAST untuk membandingkan float dengan string di database
+	var UKT string // Kelompok UKT (kel_ukt) dari mahasiswa_masters
+	var errDetail error
 	var detailTagihan models.DetailTagihan
-	errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+
+	// Coba beberapa format untuk mencocokkan dengan kel_ukt di database
+	// Format 1: int sebagai string ("2")
+	kelompokUKTInt := strconv.Itoa(int(mhswMaster.UKT))
+	errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTInt).
 		First(&detailTagihan).Error
 
-	var UKT string // Kelompok UKT (kel_ukt) dari detail_tagihan
-	if errDetail == nil && detailTagihan.KelUKT != nil {
-		UKT = *detailTagihan.KelUKT
-		utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", map[string]interface{}{
-			"mhswID":          mahasiswa.MhswID,
-			"kelompokUKT":     UKT,
-			"nominalUKT":      mhswMaster.UKT,
-			"masterTagihanID": mhswMaster.MasterTagihanID,
-		})
+	if errDetail != nil {
+		// Format 2: float dengan 2 desimal ("2.00")
+		kelompokUKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
+		errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTFloat).
+			First(&detailTagihan).Error
+		if errDetail == nil {
+			UKT = kelompokUKTFloat
+		}
 	} else {
+		UKT = kelompokUKTInt
+	}
+
+	if errDetail != nil {
+		// Format 3: tanpa desimal ("2")
+		kelompokUKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
+		errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTNoDecimal).
+			First(&detailTagihan).Error
+		if errDetail == nil {
+			UKT = kelompokUKTNoDecimal
+		}
+	}
+
+	if errDetail != nil {
 		// Fallback: cari berdasarkan master_tagihan_id saja (ambil yang pertama)
-		utils.Log.Warn("Detail tagihan tidak ditemukan dengan nominal, mencoba fallback", map[string]interface{}{
+		utils.Log.Warn("Detail tagihan tidak ditemukan dengan kel_ukt, mencoba fallback", map[string]interface{}{
 			"mhswID":          mahasiswa.MhswID,
-			"nominalUKT":      mhswMaster.UKT,
+			"uktValue":        mhswMaster.UKT,
 			"masterTagihanID": mhswMaster.MasterTagihanID,
 			"error":           errDetail,
 		})
@@ -273,21 +295,28 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 			First(&detailTagihan).Error
 		if errFallback == nil && detailTagihan.KelUKT != nil {
 			UKT = *detailTagihan.KelUKT
-			utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match nominal)", map[string]interface{}{
+			utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match kelompok)", map[string]interface{}{
 				"mhswID":          mahasiswa.MhswID,
 				"kelompokUKT":     UKT,
-				"nominalUKT":      mhswMaster.UKT,
+				"uktValue":        mhswMaster.UKT,
 				"masterTagihanID": mhswMaster.MasterTagihanID,
 			})
 		} else {
-			// Fallback terakhir: gunakan nominal sebagai string
+			// Fallback terakhir: gunakan nilai dari mahasiswa_masters sebagai string
 			UKT = strconv.Itoa(int(mhswMaster.UKT))
-			utils.Log.Warn("Kelompok UKT tidak ditemukan, menggunakan nominal sebagai string", map[string]interface{}{
-				"mhswID":     mahasiswa.MhswID,
-				"UKT":        UKT,
-				"nominalUKT": mhswMaster.UKT,
+			utils.Log.Warn("Kelompok UKT tidak ditemukan, menggunakan nilai dari mahasiswa_masters", map[string]interface{}{
+				"mhswID":   mahasiswa.MhswID,
+				"UKT":      UKT,
+				"uktValue": mhswMaster.UKT,
 			})
 		}
+	} else {
+		utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"kelompokUKT":     UKT,
+			"uktValue":        mhswMaster.UKT,
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+		})
 	}
 
 	// Ambil semua detail_tagihan dari master_tagihan_id yang sesuai dengan UKT nominal
@@ -300,7 +329,9 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 
 	var detailTagihans []models.DetailTagihan
 	// Ambil semua detail_tagihan yang sesuai dengan master_tagihan_id dan kel_ukt
+	// Gunakan DISTINCT untuk menghindari duplikasi jika ada beberapa format yang cocok
 	errDetailList := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKT).
+		Distinct("id, master_tagihan_id, kel_ukt, nama, nominal").
 		Find(&detailTagihans).Error
 
 	if errDetailList != nil {
@@ -312,40 +343,77 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 		return fmt.Errorf("gagal query detail_tagihan untuk master_tagihan_id %d dan kel_ukt %s: %w", mhswMaster.MasterTagihanID, UKT, errDetailList)
 	}
 
+	// Jika tidak ditemukan dengan kel_ukt, jangan fallback ke semua master_tagihan_id
+	// karena itu akan menghasilkan semua tagihan, bukan hanya yang sesuai kelompok UKT
 	if len(detailTagihans) == 0 {
-		// Fallback: cari berdasarkan master_tagihan_id saja (tanpa filter kel_ukt)
-		utils.Log.Warn("Detail tagihan tidak ditemukan dengan kel_ukt, mencoba tanpa filter kel_ukt", map[string]interface{}{
+		utils.Log.Error("Detail tagihan tidak ditemukan dengan kel_ukt yang sesuai", map[string]interface{}{
 			"masterTagihanID": mhswMaster.MasterTagihanID,
 			"kelompokUKT":     UKT,
-		})
-		errDetailFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
-			Find(&detailTagihans).Error
-		if errDetailFallback != nil {
-			utils.Log.Error("Gagal query detail_tagihan (fallback)", map[string]interface{}{
-				"masterTagihanID": mhswMaster.MasterTagihanID,
-				"error":           errDetailFallback.Error(),
-			})
-			return fmt.Errorf("gagal query detail_tagihan untuk master_tagihan_id %d: %w", mhswMaster.MasterTagihanID, errDetailFallback)
-		}
-	}
-
-	if len(detailTagihans) == 0 {
-		utils.Log.Error("Tidak ada detail_tagihan yang ditemukan", map[string]interface{}{
-			"masterTagihanID": mhswMaster.MasterTagihanID,
-			"kelompokUKT":     UKT,
+			"uktValue":        mhswMaster.UKT,
 			"mhswID":          mahasiswa.MhswID,
 		})
 		return fmt.Errorf("tidak ada detail_tagihan yang ditemukan untuk master_tagihan_id %d dan kel_ukt %s (mahasiswa %s)", mhswMaster.MasterTagihanID, UKT, mahasiswa.MhswID)
 	}
 
-	utils.Log.Info("Detail tagihan ditemukan", "count", len(detailTagihans), "masterTagihanID", mhswMaster.MasterTagihanID, "kelompokUKT", UKT)
+	// Log jumlah detail_tagihan yang ditemukan untuk debugging
+	utils.Log.Info("Detail tagihan ditemukan", map[string]interface{}{
+		"count":           len(detailTagihans),
+		"masterTagihanID": mhswMaster.MasterTagihanID,
+		"kelompokUKT":     UKT,
+		"detailTagihans":  detailTagihans,
+	})
+
+	// Jika ada lebih dari 1 record, ambil hanya yang pertama (atau filter berdasarkan nama tertentu)
+	// Biasanya untuk UKT hanya ada 1 record per kelompok UKT
+	if len(detailTagihans) > 1 {
+		utils.Log.Warn("Ditemukan lebih dari 1 detail_tagihan, akan menggunakan yang pertama", map[string]interface{}{
+			"count":           len(detailTagihans),
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"kelompokUKT":     UKT,
+		})
+		// Filter untuk mengambil hanya record dengan nama "UKT" atau yang nominalnya sesuai
+		// Atau ambil yang pertama saja
+		var filteredDetailTagihans []models.DetailTagihan
+		for _, dt := range detailTagihans {
+			// Jika nama mengandung "UKT" atau "Uang Kuliah", gunakan itu
+			if strings.Contains(strings.ToUpper(dt.Nama), "UKT") || strings.Contains(strings.ToUpper(dt.Nama), "UANG KULIAH") {
+				filteredDetailTagihans = append(filteredDetailTagihans, dt)
+			}
+		}
+		// Jika tidak ada yang match dengan filter, ambil yang pertama saja
+		if len(filteredDetailTagihans) == 0 {
+			detailTagihans = detailTagihans[:1] // Ambil hanya yang pertama
+		} else {
+			detailTagihans = filteredDetailTagihans
+		}
+		utils.Log.Info("Detail tagihan setelah filter", map[string]interface{}{
+			"count": len(detailTagihans),
+		})
+	}
 
 	nominalBeasiswa := r.GetNominalBeasiswa(string(mahasiswa.MhswID), financeYear.AcademicYear)
 	utils.Log.Info("nominalBeasiswa:", nominalBeasiswa)
 
 	sisaBeasiswa := nominalBeasiswa
 	// Generate StudentBill langsung dari detail_tagihan
+	// Cek dulu apakah sudah ada StudentBill dengan nama yang sama untuk tahun akademik ini
 	for _, dt := range detailTagihans {
+		// Cek apakah sudah ada StudentBill dengan nama yang sama untuk tahun akademik ini
+		var existingBill models.StudentBill
+		errCheck := r.repo.DB.Where("student_id = ? AND academic_year = ? AND name = ?",
+			mahasiswa.MhswID, financeYear.AcademicYear, dt.Nama).
+			First(&existingBill).Error
+
+		if errCheck == nil {
+			// Sudah ada, skip
+			utils.Log.Info("StudentBill sudah ada, skip", map[string]interface{}{
+				"mhswID":       mahasiswa.MhswID,
+				"academicYear": financeYear.AcademicYear,
+				"name":         dt.Nama,
+				"billID":       existingBill.ID,
+			})
+			continue
+		}
 		nominalBeasiswaSaatIni := int64(0)
 		nominalTagihan := dt.Nominal
 		if sisaBeasiswa > 0 && sisaBeasiswa >= dt.Nominal {
