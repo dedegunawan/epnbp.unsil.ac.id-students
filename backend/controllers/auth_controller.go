@@ -168,7 +168,7 @@ func CallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// sinkronkan dengan data npm dari mahasiswa_masters (PNBP) terlebih dahulu, fallback ke SIMAK
+	// sinkronkan dengan data npm dari mahasiswa_masters (PNBP)
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
 	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
 
@@ -176,18 +176,10 @@ func CallbackHandler(c *gin.Context) {
 	err = mahasiswaService.CreateFromMasterMahasiswa(studentID)
 
 	if err != nil {
-		utils.Log.Info(fmt.Sprintf("CreateFromMasterMahasiswa failed for %s: %s", studentID, err.Error()))
-		// Fallback ke SIMAK jika mahasiswa_masters tidak ditemukan
-		err = mahasiswaService.CreateFromSimak(studentID)
-		if err != nil {
-			utils.Log.Error(fmt.Sprintf("CreateFromSimak also failed for %s: %s", studentID, err.Error()))
-			// Log error detail tapi jangan block login - user mungkin bukan mahasiswa
-			utils.Log.Warn(fmt.Sprintf("Mahasiswa tidak ditemukan di mahasiswa_masters maupun SIMAK untuk studentID: %s", studentID))
-			// Tidak return error - biarkan user tetap bisa login meskipun data mahasiswa tidak ditemukan
-			// Error ini akan muncul di log untuk debugging
-		} else {
-			utils.Log.Info(fmt.Sprintf("Mahasiswa berhasil dibuat dari SIMAK untuk studentID: %s", studentID))
-		}
+		utils.Log.Warn(fmt.Sprintf("CreateFromMasterMahasiswa failed for %s: %s", studentID, err.Error()))
+		utils.Log.Warn(fmt.Sprintf("Mahasiswa tidak ditemukan di mahasiswa_masters untuk studentID: %s", studentID))
+		// Tidak return error - biarkan user tetap bisa login meskipun data mahasiswa tidak ditemukan
+		// Error ini akan muncul di log untuk debugging
 	} else {
 		utils.Log.Info(fmt.Sprintf("Mahasiswa berhasil dibuat dari mahasiswa_masters untuk studentID: %s", studentID))
 	}

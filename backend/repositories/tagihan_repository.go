@@ -60,6 +60,12 @@ func (r *TagihanRepository) OverrideFinanceYear(financeYear *models.FinanceYear,
 	skippedFakultas := false
 	skippedProdi := false
 
+	// Validasi MhswID tidak kosong
+	if mahasiswa.MhswID == "" {
+		utils.Log.Warn("OverrideFinanceYear: MhswID kosong, skip override")
+		return nil
+	}
+
 	utils.Log.Info("Override Finance Year untuk mahasiswa:", mahasiswa.MhswID)
 
 	// Ambil prodi langsung dari mahasiswa_masters di database PNBP

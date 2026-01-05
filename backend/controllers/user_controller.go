@@ -104,7 +104,28 @@ func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
 
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
 	userEmail := user.Email
-	mahasiswa, _ := mahasiswaRepo.FindByEmailPattern(userEmail)
+	mahasiswa, err := mahasiswaRepo.FindByEmailPattern(userEmail)
+
+	// Jika mahasiswa tidak ditemukan, coba buat dari mahasiswa_masters
+	if err != nil || mahasiswa == nil {
+		studentID := utils.GetEmailPrefix(userEmail)
+		if studentID != "" {
+			utils.Log.Info("Mahasiswa tidak ditemukan di tabel mahasiswas, mencoba membuat dari mahasiswa_masters", "studentID", studentID)
+			mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
+			errCreate := mahasiswaService.CreateFromMasterMahasiswa(studentID)
+			if errCreate == nil {
+				// Coba ambil lagi setelah dibuat
+				mahasiswa, err = mahasiswaRepo.FindByMhswID(studentID)
+				if err == nil && mahasiswa != nil {
+					utils.Log.Info("Mahasiswa berhasil dibuat dari mahasiswa_masters", "studentID", studentID)
+				} else {
+					utils.Log.Warn("Mahasiswa tidak ditemukan setelah dibuat dari mahasiswa_masters", "studentID", studentID, "error", err)
+				}
+			} else {
+				utils.Log.Warn("Gagal membuat mahasiswa dari mahasiswa_masters", "studentID", studentID, "error", errCreate)
+			}
+		}
+	}
 
 	mahasiswaID := "nil"
 	if mahasiswa != nil {
@@ -121,6 +142,21 @@ func Me(c *gin.Context) {
 	user, mahasiswa, mustreturn := getMahasiswa(c)
 	if mustreturn {
 		utils.Log.Warn("Endpoint /me: getMahasiswa mengembalikan mustreturn=true")
+		return
+	}
+
+	// Validasi mahasiswa tidak nil
+	if mahasiswa == nil {
+		utils.Log.Warn("Endpoint /me: Mahasiswa tidak ditemukan")
+		c.JSON(200, gin.H{
+			"id":        user.ID,
+			"name":      user.Name,
+			"email":     user.Email,
+			"sso_id":    c.GetString("sso_id"),
+			"is_active": user.IsActive,
+			"mahasiswa": nil,
+			"semester":  0,
+		})
 		return
 	}
 
@@ -169,6 +205,14 @@ func Me(c *gin.Context) {
 }
 
 func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
+	// Validasi mahasiswa dan MhswID tidak kosong
+	if mahasiswa == nil {
+		return 0, fmt.Errorf("mahasiswa tidak ditemukan")
+	}
+	if mahasiswa.MhswID == "" {
+		return 0, fmt.Errorf("MhswID kosong")
+	}
+
 	utils.Log.Info("semesterSaatIniMahasiswa: Memulai perhitungan semester", map[string]interface{}{
 		"mhswID": mahasiswa.MhswID,
 		"nama":   mahasiswa.Nama,
