@@ -103,23 +103,65 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	}
 
 	// Query prodi menggunakan .First() untuk mendeteksi jika record tidak ditemukan
+	// Pastikan query ke tabel prodis di database PNBP
 	var prodiData models.ProdiPnbp
 	err = database.DBPNBP.Where("id=?", prodi_id).First(&prodiData).Error
 	if err != nil {
+		utils.Log.Error("Gagal query prodi dari database PNBP", map[string]interface{}{
+			"mhswID":  mhswID,
+			"prodiID": prodi_id,
+			"error":   err.Error(),
+		})
 		return fmt.Errorf("gagal ambil data prodi master (id=%d): %w", prodi_id, err)
 	}
 
 	// Validasi prodi ditemukan
 	if prodiData.ID == 0 {
+		utils.Log.Error("Prodi ID = 0 setelah query", map[string]interface{}{
+			"mhswID":  mhswID,
+			"prodiID": prodi_id,
+		})
 		return fmt.Errorf("prodi dengan id %d tidak ditemukan di database PNBP", prodi_id)
 	}
 
+	utils.Log.Info("Prodi ditemukan di database PNBP", map[string]interface{}{
+		"mhswID":     mhswID,
+		"prodiID":    prodiData.ID,
+		"kodeProdi":  prodiData.KodeProdi,
+		"namaProdi":  prodiData.NamaProdi,
+		"fakultasID": prodiData.FakultasID,
+	})
+
+	// Validasi fakultasID tidak kosong
+	if prodiData.FakultasID == 0 {
+		utils.Log.Error("FakultasID = 0 di prodi", map[string]interface{}{
+			"mhswID":  mhswID,
+			"prodiID": prodiData.ID,
+		})
+		return fmt.Errorf("fakultas_id tidak ditemukan di prodi (id=%d)", prodiData.ID)
+	}
+
 	// Query fakultas menggunakan .First() untuk mendeteksi jika record tidak ditemukan
+	// Pastikan query ke tabel fakultas di database PNBP menggunakan fakultas_id dari prodi
+	// Relasi: prodis.fakultas_id = fakultas.id
 	var fakultasData models.FakultasPnbp
 	err = database.DBPNBP.Where("id=?", prodiData.FakultasID).First(&fakultasData).Error
 	if err != nil {
+		utils.Log.Error("Gagal query fakultas dari database PNBP", map[string]interface{}{
+			"mhswID":     mhswID,
+			"fakultasID": prodiData.FakultasID,
+			"prodiID":    prodiData.ID,
+			"error":      err.Error(),
+		})
 		return fmt.Errorf("gagal ambil data fakultas master (id=%d): %w", prodiData.FakultasID, err)
 	}
+
+	utils.Log.Info("Fakultas ditemukan di database PNBP", map[string]interface{}{
+		"mhswID":       mhswID,
+		"fakultasID":   fakultasData.ID,
+		"kodeFakultas": fakultasData.KodeFakultas,
+		"namaFakultas": fakultasData.NamaFakultas,
+	})
 
 	// Validasi fakultas ditemukan
 	if fakultasData.ID == 0 {
