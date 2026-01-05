@@ -58,24 +58,47 @@ func (s *mahasiswaService) Delete(id uuid.UUID) error {
 func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	mhsw, err := s.GetByMhswID(mhswID)
 	if err == nil && mhsw != nil {
+		utils.Log.Info("Mahasiswa sudah ada di database, skip create", "mhswID", mhswID)
 		return nil
 	}
+
+	utils.Log.Info("Memulai CreateFromMasterMahasiswa", map[string]interface{}{
+		"mhswID": mhswID,
+		"error":  err,
+	})
 
 	// 1. Ambil data mahasiswa dari Master Mahasiswa
 	var mhswMaster models.MahasiswaMaster
 	err = database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).First(&mhswMaster).Error
 	if err != nil {
-		// Jika record tidak ditemukan, return error
+		// Jika record tidak ditemukan, return error dengan detail
+		utils.Log.Error("Mahasiswa tidak ditemukan di mahasiswa_masters", map[string]interface{}{
+			"mhswID": mhswID,
+			"error":  err.Error(),
+		})
 		return fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters: %w", err)
 	}
 
 	// Pastikan data valid
 	if mhswMaster.ID == 0 {
+		utils.Log.Error("Mahasiswa master ID = 0", "mhswID", mhswID)
 		return fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters (ID=0)")
 	}
 
+	utils.Log.Info("Mahasiswa master ditemukan", map[string]interface{}{
+		"mhswID":          mhswID,
+		"masterID":        mhswMaster.ID,
+		"namaLengkap":     mhswMaster.NamaLengkap,
+		"prodiID":         mhswMaster.ProdiID,
+		"masterTagihanID": mhswMaster.MasterTagihanID,
+	})
+
 	prodi_id := mhswMaster.ProdiID
 	if prodi_id == 0 {
+		utils.Log.Error("ProdiID = 0 di mahasiswa_masters", map[string]interface{}{
+			"mhswID":   mhswID,
+			"masterID": mhswMaster.ID,
+		})
 		return fmt.Errorf("gagal ambil data mahasiswa master: prodi_id tidak ditemukan")
 	}
 
@@ -224,6 +247,12 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 		return fmt.Errorf("gagal firstOrCreate mahasiswa: %w", err)
 	}
 
+	utils.Log.Info("Mahasiswa FirstOrCreate berhasil", map[string]interface{}{
+		"mhswID":  mahasiswa.MhswID,
+		"prodiID": mahasiswa.ProdiID,
+		"id":      mahasiswa.ID,
+	})
+
 	// set bipotid
 	BIPOTID := 0
 	if mhswMaster.MasterTagihanID != 0 && mhswMaster.MasterTagihan != nil {
@@ -274,6 +303,15 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	if err != nil {
 		return fmt.Errorf("gagal update mahasiswa: %w", err)
 	}
+
+	utils.Log.Info("Mahasiswa berhasil di-update dari mahasiswa_masters", map[string]interface{}{
+		"mhswID":    mahasiswa.MhswID,
+		"nama":      mhswMaster.NamaLengkap,
+		"email":     mhswMaster.Email,
+		"prodiID":   prodi.ID,
+		"kodeProdi": prodi.KodeProdi,
+		"namaProdi": prodi.NamaProdi,
+	})
 
 	return nil
 }

@@ -110,20 +110,62 @@ func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
 	if err != nil || mahasiswa == nil {
 		studentID := utils.GetEmailPrefix(userEmail)
 		if studentID != "" {
-			utils.Log.Info("Mahasiswa tidak ditemukan di tabel mahasiswas, mencoba membuat dari mahasiswa_masters", "studentID", studentID)
+			utils.Log.Info("Mahasiswa tidak ditemukan di tabel mahasiswas, mencoba membuat dari mahasiswa_masters", map[string]interface{}{
+				"studentID": studentID,
+				"email":     userEmail,
+				"error":     err,
+			})
 			mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
 			errCreate := mahasiswaService.CreateFromMasterMahasiswa(studentID)
 			if errCreate == nil {
-				// Coba ambil lagi setelah dibuat
+				// Tunggu sebentar untuk memastikan data sudah tersimpan
+				time.Sleep(200 * time.Millisecond)
+				// Coba ambil lagi setelah dibuat dengan Preload relasi
 				mahasiswa, err = mahasiswaRepo.FindByMhswID(studentID)
 				if err == nil && mahasiswa != nil {
-					utils.Log.Info("Mahasiswa berhasil dibuat dari mahasiswa_masters", "studentID", studentID)
+					// Validasi data mahasiswa sudah terisi dengan benar
+					if mahasiswa.MhswID == "" || mahasiswa.MhswID != studentID {
+						utils.Log.Error("Mahasiswa dibuat tapi MhswID tidak valid", map[string]interface{}{
+							"studentID":   studentID,
+							"mhswID":      mahasiswa.MhswID,
+							"mahasiswaID": mahasiswa.ID,
+							"nama":        mahasiswa.Nama,
+							"prodiID":     mahasiswa.ProdiID,
+						})
+						mahasiswa = nil // Set ke nil agar tidak digunakan
+					} else {
+						utils.Log.Info("Mahasiswa berhasil dibuat dari mahasiswa_masters", map[string]interface{}{
+							"studentID": studentID,
+							"mhswID":    mahasiswa.MhswID,
+							"nama":      mahasiswa.Nama,
+							"prodiID":   mahasiswa.ProdiID,
+							"prodi":     mahasiswa.Prodi,
+						})
+					}
 				} else {
-					utils.Log.Warn("Mahasiswa tidak ditemukan setelah dibuat dari mahasiswa_masters", "studentID", studentID, "error", err)
+					utils.Log.Error("Mahasiswa tidak ditemukan setelah dibuat dari mahasiswa_masters", map[string]interface{}{
+						"studentID": studentID,
+						"error":     err,
+					})
+					// Coba query langsung untuk debug
+					var debugMhsw models.Mahasiswa
+					debugErr := database.DB.Where("mhsw_id = ?", studentID).First(&debugMhsw).Error
+					utils.Log.Info("Debug query mahasiswa", map[string]interface{}{
+						"studentID": studentID,
+						"error":     debugErr,
+						"found":     debugMhsw.ID > 0,
+						"mhswID":    debugMhsw.MhswID,
+					})
 				}
 			} else {
-				utils.Log.Warn("Gagal membuat mahasiswa dari mahasiswa_masters", "studentID", studentID, "error", errCreate)
+				utils.Log.Error("Gagal membuat mahasiswa dari mahasiswa_masters", map[string]interface{}{
+					"studentID": studentID,
+					"error":     errCreate.Error(),
+				})
+				// Jangan set mahasiswa = nil di sini, biarkan tetap nil dari awal
 			}
+		} else {
+			utils.Log.Warn("StudentID kosong, tidak dapat membuat mahasiswa dari mahasiswa_masters", "email", userEmail)
 		}
 	}
 
