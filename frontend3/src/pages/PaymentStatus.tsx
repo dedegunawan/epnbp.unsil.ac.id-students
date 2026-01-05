@@ -1,12 +1,22 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { api } from "@/lib/axios";
+import { toast } from "sonner";
 import { 
   DollarSign, 
   CheckCircle2, 
@@ -18,7 +28,8 @@ import {
   Download,
   Calendar,
   CreditCard,
-  Database
+  Database,
+  Edit
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -64,6 +75,16 @@ const PaymentStatus = () => {
   });
 
   const [token, setToken] = useState<string | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<PaymentStatusDetail | null>(null);
+  const [updateForm, setUpdateForm] = useState({
+    paid_amount: "",
+    payment_date: format(new Date(), "yyyy-MM-dd"),
+    payment_method: "Manual",
+    bank: "",
+    payment_ref: "",
+    note: "",
+  });
 
   useEffect(() => {
     // Get token from localStorage using VITE_TOKEN_KEY (same as frontend)
@@ -78,6 +99,8 @@ const PaymentStatus = () => {
       console.log('API URL:', import.meta.env.VITE_API_URL);
     }
   }, []);
+
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error, refetch } = useQuery<PaymentStatusResponse>({
     queryKey: ["payment-status", filters, token],
@@ -105,6 +128,87 @@ const PaymentStatus = () => {
     enabled: true, // Allow query even without token for testing
     retry: 1,
   });
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: async (data: {
+      studentBillID: number;
+      paid_amount: number;
+      payment_date: string;
+      payment_method: string;
+      bank: string;
+      payment_ref: string;
+      note: string;
+    }) => {
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await api.put(
+        `/v1/payment-status/${data.studentBillID}`,
+        {
+          paid_amount: data.paid_amount,
+          payment_date: data.payment_date,
+          payment_method: data.payment_method,
+          bank: data.bank,
+          payment_ref: data.payment_ref,
+          note: data.note,
+        },
+        { headers }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success("Status pembayaran berhasil diupdate");
+      setUpdateDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["payment-status"] });
+      refetch();
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.error || "Gagal mengupdate status pembayaran";
+      toast.error(errorMessage);
+    },
+  });
+
+  const handleOpenUpdateDialog = (bill: PaymentStatusDetail) => {
+    setSelectedBill(bill);
+    setUpdateForm({
+      paid_amount: bill.paid_amount.toString(),
+      payment_date: format(new Date(), "yyyy-MM-dd"),
+      payment_method: "Manual",
+      bank: "",
+      payment_ref: "",
+      note: "",
+    });
+    setUpdateDialogOpen(true);
+  };
+
+  const handleUpdatePayment = () => {
+    if (!selectedBill) return;
+
+    const paidAmount = parseFloat(updateForm.paid_amount);
+    if (isNaN(paidAmount) || paidAmount < 0) {
+      toast.error("Jumlah pembayaran tidak valid");
+      return;
+    }
+
+    if (paidAmount > selectedBill.amount) {
+      toast.error("Jumlah pembayaran tidak boleh lebih besar dari total tagihan");
+      return;
+    }
+
+    updatePaymentMutation.mutate({
+      studentBillID: selectedBill.student_bill_id,
+      paid_amount: paidAmount,
+      payment_date: updateForm.payment_date
+        ? `${updateForm.payment_date} ${format(new Date(), "HH:mm:ss")}`
+        : format(new Date(), "yyyy-MM-dd HH:mm:ss"),
+      payment_method: updateForm.payment_method,
+      bank: updateForm.bank,
+      payment_ref: updateForm.payment_ref,
+      note: updateForm.note,
+    });
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -314,12 +418,13 @@ const PaymentStatus = () => {
                       <TableHead>Pay URL Created</TableHead>
                       <TableHead>VA Created</TableHead>
                       <TableHead>Expired At</TableHead>
+                      <TableHead>Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {allBills.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                           Tidak ada data
                         </TableCell>
                       </TableRow>
@@ -389,6 +494,16 @@ const PaymentStatus = () => {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenUpdateDialog(bill)}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Update
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -425,6 +540,147 @@ const PaymentStatus = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Update Payment Status Dialog */}
+        <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Update Status Pembayaran</DialogTitle>
+              <DialogDescription>
+                Update status pembayaran untuk tagihan mahasiswa
+              </DialogDescription>
+            </DialogHeader>
+            {selectedBill && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Student ID</Label>
+                  <Input value={selectedBill.student_id} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nama Mahasiswa</Label>
+                  <Input value={selectedBill.student_name || "-"} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tagihan</Label>
+                  <Input value={selectedBill.bill_name} disabled />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Total Tagihan</Label>
+                    <Input
+                      value={formatCurrency(selectedBill.amount)}
+                      disabled
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sudah Dibayar</Label>
+                    <Input
+                      value={formatCurrency(selectedBill.paid_amount)}
+                      disabled
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="paid_amount">
+                    Jumlah Pembayaran Baru <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="paid_amount"
+                    type="number"
+                    min="0"
+                    max={selectedBill.amount}
+                    value={updateForm.paid_amount}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, paid_amount: e.target.value })
+                    }
+                    placeholder="Masukkan jumlah pembayaran"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maksimal: {formatCurrency(selectedBill.amount)}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_date">Tanggal Pembayaran</Label>
+                  <Input
+                    id="payment_date"
+                    type="date"
+                    value={updateForm.payment_date}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, payment_date: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Metode Pembayaran</Label>
+                  <Select
+                    value={updateForm.payment_method}
+                    onValueChange={(value) =>
+                      setUpdateForm({ ...updateForm, payment_method: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Manual">Manual</SelectItem>
+                      <SelectItem value="VA">Virtual Account</SelectItem>
+                      <SelectItem value="Transfer">Transfer</SelectItem>
+                      <SelectItem value="Tunai">Tunai</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bank">Bank</Label>
+                  <Input
+                    id="bank"
+                    value={updateForm.bank}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, bank: e.target.value })
+                    }
+                    placeholder="Nama bank (opsional)"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment_ref">Referensi Pembayaran</Label>
+                  <Input
+                    id="payment_ref"
+                    value={updateForm.payment_ref}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, payment_ref: e.target.value })
+                    }
+                    placeholder="No. referensi pembayaran (opsional)"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="note">Catatan</Label>
+                  <Input
+                    id="note"
+                    value={updateForm.note}
+                    onChange={(e) =>
+                      setUpdateForm({ ...updateForm, note: e.target.value })
+                    }
+                    placeholder="Catatan tambahan (opsional)"
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setUpdateDialogOpen(false)}
+                disabled={updatePaymentMutation.isPending}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleUpdatePayment}
+                disabled={updatePaymentMutation.isPending}
+              >
+                {updatePaymentMutation.isPending ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

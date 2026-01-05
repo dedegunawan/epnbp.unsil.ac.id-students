@@ -3,6 +3,10 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+
 	_ "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/dedegunawan/backend-ujian-telp-v5/auth"
 	"github.com/dedegunawan/backend-ujian-telp-v5/config"
@@ -13,9 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
-	"log"
-	"net/http"
-	"os"
 )
 
 func SsoLoginHandler(c *gin.Context) {
@@ -170,16 +171,25 @@ func CallbackHandler(c *gin.Context) {
 	// sinkronkan dengan data npm dari mahasiswa_masters (PNBP) terlebih dahulu, fallback ke SIMAK
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
 	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
-	err = mahasiswaService.CreateFromMasterMahasiswa(utils.GetEmailPrefix(claims.Email))
+
+	studentID := utils.GetEmailPrefix(claims.Email)
+	err = mahasiswaService.CreateFromMasterMahasiswa(studentID)
 
 	if err != nil {
+		utils.Log.Info(fmt.Sprintf("CreateFromMasterMahasiswa failed for %s: %s", studentID, err.Error()))
 		// Fallback ke SIMAK jika mahasiswa_masters tidak ditemukan
-		err = mahasiswaService.CreateFromSimak(utils.GetEmailPrefix(claims.Email))
-	}
-
-	if err != nil {
-		utils.Log.Info(fmt.Sprintf("Err : %s", err.Error()))
-		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to create mahasiswa user")
+		err = mahasiswaService.CreateFromSimak(studentID)
+		if err != nil {
+			utils.Log.Error(fmt.Sprintf("CreateFromSimak also failed for %s: %s", studentID, err.Error()))
+			// Log error detail tapi jangan block login - user mungkin bukan mahasiswa
+			utils.Log.Warn(fmt.Sprintf("Mahasiswa tidak ditemukan di mahasiswa_masters maupun SIMAK untuk studentID: %s", studentID))
+			// Tidak return error - biarkan user tetap bisa login meskipun data mahasiswa tidak ditemukan
+			// Error ini akan muncul di log untuk debugging
+		} else {
+			utils.Log.Info(fmt.Sprintf("Mahasiswa berhasil dibuat dari SIMAK untuk studentID: %s", studentID))
+		}
+	} else {
+		utils.Log.Info(fmt.Sprintf("Mahasiswa berhasil dibuat dari mahasiswa_masters untuk studentID: %s", studentID))
 	}
 
 	// Simpan access_token dan refresh_token

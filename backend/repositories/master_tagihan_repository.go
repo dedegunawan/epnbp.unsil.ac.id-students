@@ -40,19 +40,34 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 	
 	if err == nil && mhswMaster.MasterTagihanID != 0 {
 		// Jika mahasiswa_masters ditemukan dan punya MasterTagihanID, gunakan langsung
-		UKTString := strconv.Itoa(int(mhswMaster.UKT))
-		
-		utils.Log.Info("Using mahasiswa_masters data for tagihan lookup", map[string]interface{}{
-			"StudentID":      mhswMaster.StudentID,
-			"MasterTagihanID": mhswMaster.MasterTagihanID,
-			"UKT":            UKTString,
-		})
-		
+		// Catatan: mhswMaster.UKT adalah nominal (int64), tapi kel_ukt di detail_tagihan adalah kelompok UKT (string)
+		// Jadi kita perlu mencari detail_tagihan berdasarkan MasterTagihanID dan nominal UKT untuk mendapatkan kel_ukt
 		var detailTagihan models.DetailTagihan
-		err = mtr.DB.Where("master_tagihan_id = ? and kel_ukt = ?", mhswMaster.MasterTagihanID, UKTString).
+		err = mtr.DB.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
 			First(&detailTagihan).Error
 		
-		if err == nil {
+		if err == nil && detailTagihan.KelUKT != nil {
+			// Berhasil menemukan detail_tagihan dengan nominal yang sesuai
+			utils.Log.Info("Using mahasiswa_masters data for tagihan lookup", map[string]interface{}{
+				"StudentID":      mhswMaster.StudentID,
+				"MasterTagihanID": mhswMaster.MasterTagihanID,
+				"NominalUKT":     mhswMaster.UKT,
+				"KelompokUKT":    *detailTagihan.KelUKT,
+			})
+			return &detailTagihan, nil
+		}
+		
+		// Fallback: cari berdasarkan MasterTagihanID saja (ambil yang pertama)
+		err = mtr.DB.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
+			First(&detailTagihan).Error
+		
+		if err == nil && detailTagihan.KelUKT != nil {
+			utils.Log.Warn("Detail tagihan ditemukan dengan fallback (tidak match nominal)", map[string]interface{}{
+				"StudentID":      mhswMaster.StudentID,
+				"MasterTagihanID": mhswMaster.MasterTagihanID,
+				"NominalUKT":     mhswMaster.UKT,
+				"KelompokUKT":    *detailTagihan.KelUKT,
+			})
 			return &detailTagihan, nil
 		}
 		
@@ -116,8 +131,16 @@ func (mtr *MasterTagihanRepository) FindMasterTagihanMahasiswa(mahasiswa models.
 
 	// UKT: prioritas dari mahasiswa_masters, fallback ke mahasiswa.UKT
 	UKTString := utils.GetStringFromAny(mahasiswa.UKT)
-	if mhswMaster.UKT > 0 {
-		UKTString = strconv.Itoa(int(mhswMaster.UKT))
+	
+	// Jika ada mhswMaster, coba ambil kelompok UKT dari detail_tagihan berdasarkan nominal
+	if mhswMaster.UKT > 0 && mhswMaster.MasterTagihanID != 0 {
+		var detailTagihanByNominal models.DetailTagihan
+		errNominal := mtr.DB.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+			First(&detailTagihanByNominal).Error
+		if errNominal == nil && detailTagihanByNominal.KelUKT != nil {
+			UKTString = *detailTagihanByNominal.KelUKT
+			utils.Log.Info("Kelompok UKT diambil dari detail_tagihan berdasarkan nominal", "nominalUKT", mhswMaster.UKT, "kelompokUKT", UKTString)
+		}
 	}
 
 	utils.Log.Info("Querying detail tagihan for MasterTagihanID: ", tagihan.ID, " with UKT: ", UKTString)

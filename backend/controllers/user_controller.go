@@ -403,11 +403,38 @@ func GenerateCurrentBill(c *gin.Context) {
 	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	if len(tagihan) == 0 {
+		utils.Log.Info("Memulai pembuatan tagihan baru", map[string]interface{}{
+			"mhswID":      mahasiswa.MhswID,
+			"nama":        mahasiswa.Nama,
+			"BIPOTID":     mahasiswa.BIPOTID,
+			"UKT":         mahasiswa.UKT,
+			"academicYear": activeYear.AcademicYear,
+		})
 		if err := tagihanService.CreateNewTagihan(mahasiswa, activeYear); err != nil {
-			utils.Log.Info("Gagal membuat tagihan", "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
+			utils.Log.Error("Gagal membuat tagihan", map[string]interface{}{
+				"mhswID":      mahasiswa.MhswID,
+				"nama":        mahasiswa.Nama,
+				"BIPOTID":     mahasiswa.BIPOTID,
+				"UKT":         mahasiswa.UKT,
+				"academicYear": activeYear.AcademicYear,
+				"error":       err.Error(),
+			})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Gagal membuat tagihan",
+				"message": err.Error(),
+				"details": map[string]interface{}{
+					"mhswID":      mahasiswa.MhswID,
+					"BIPOTID":     mahasiswa.BIPOTID,
+					"UKT":         mahasiswa.UKT,
+					"academicYear": activeYear.AcademicYear,
+				},
+			})
 			return
 		}
+		utils.Log.Info("Tagihan berhasil dibuat", map[string]interface{}{
+			"mhswID":      mahasiswa.MhswID,
+			"academicYear": activeYear.AcademicYear,
+		})
 	}
 
 	masihAdaKurangNominal := false

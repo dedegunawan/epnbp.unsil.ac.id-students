@@ -21,9 +21,18 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:8080',
+          // Target adalah backend URL (tanpa /api di akhir)
+          // Vite akan memproxikan /api/* ke target/api/*
+          // Jika VITE_API_URL diset, gunakan itu (hilangkan /api di akhir jika ada)
+          // Jika tidak, default ke localhost:8080
+          target: env.VITE_API_URL 
+            ? (env.VITE_API_URL.replace(/\/api\/?$/, '').startsWith('http') 
+                ? env.VITE_API_URL.replace(/\/api\/?$/, '')
+                : `http://${env.VITE_API_URL.replace(/\/api\/?$/, '')}`)
+            : 'http://localhost:8080',
           changeOrigin: true,
-          rewrite: path => path.replace(/^\/api/, '/api'),
+          secure: false,
+          // Vite akan otomatis menambahkan path /api ke target
         },
       },
     },

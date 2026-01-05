@@ -4,10 +4,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/dedegunawan/backend-ujian-telp-v5/database"
-	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"os"
 	"strconv"
+
+	"github.com/dedegunawan/backend-ujian-telp-v5/database"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
@@ -241,26 +242,54 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 
 	// 1. Ambil data mahasiswa dari Master Mahasiswa
 	var mhswMaster models.MahasiswaMaster
-	err = database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).Find(&mhswMaster).Error
+	err = database.DBPNBP.Preload("MasterTagihan").Where("student_id=?", mhswID).First(&mhswMaster).Error
 	if err != nil {
-		return fmt.Errorf("gagal ambil data mahasiswa master: %w", err)
+		// Jika record tidak ditemukan, return error agar bisa fallback ke SIMAK
+		return fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters: %w", err)
+	}
+
+	// Pastikan data valid
+	if mhswMaster.ID == 0 {
+		return fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters (ID=0)")
 	}
 
 	prodi_id := mhswMaster.ProdiID
 	if prodi_id == 0 {
-		return fmt.Errorf("gagal ambil data mahasiswa master")
-	}
-	var prodiData models.ProdiPnbp
-	err = database.DBPNBP.Where("id=?", prodi_id).Find(&prodiData).Error
-	if err != nil {
-		return fmt.Errorf("gagal ambil data prodi master: %w", err)
+		return fmt.Errorf("gagal ambil data mahasiswa master: prodi_id tidak ditemukan")
 	}
 
-	var fakultasData models.FakultasPnbp
-	err = database.DBPNBP.Where("id=?", prodiData.FakultasID).
-		Find(&fakultasData).Error
+	// Query prodi menggunakan .First() untuk mendeteksi jika record tidak ditemukan
+	var prodiData models.ProdiPnbp
+	err = database.DBPNBP.Where("id=?", prodi_id).First(&prodiData).Error
 	if err != nil {
-		return fmt.Errorf("gagal ambil data fakultas master: %w", err)
+		return fmt.Errorf("gagal ambil data prodi master (id=%d): %w", prodi_id, err)
+	}
+
+	// Validasi prodi ditemukan
+	if prodiData.ID == 0 {
+		return fmt.Errorf("prodi dengan id %d tidak ditemukan di database PNBP", prodi_id)
+	}
+
+	// Query fakultas menggunakan .First() untuk mendeteksi jika record tidak ditemukan
+	var fakultasData models.FakultasPnbp
+	err = database.DBPNBP.Where("id=?", prodiData.FakultasID).First(&fakultasData).Error
+	if err != nil {
+		return fmt.Errorf("gagal ambil data fakultas master (id=%d): %w", prodiData.FakultasID, err)
+	}
+
+	// Validasi fakultas ditemukan
+	if fakultasData.ID == 0 {
+		return fmt.Errorf("fakultas dengan id %d tidak ditemukan di database PNBP", prodiData.FakultasID)
+	}
+
+	// Validasi data fakultas tidak kosong
+	if fakultasData.KodeFakultas == "" {
+		return fmt.Errorf("data fakultas tidak valid: KodeFakultas kosong untuk id %d", fakultasData.ID)
+	}
+
+	// Validasi data prodi tidak kosong
+	if prodiData.KodeProdi == "" {
+		return fmt.Errorf("data prodi tidak valid: KodeProdi kosong untuk id %d", prodiData.ID)
 	}
 
 	db := s.repo.GetDB()
@@ -312,23 +341,50 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 			semesterMasuk = 1 // Pastikan hanya 1 atau 2
 		}
 	}
-	
-	fullDataMap := map[string]interface{}{
-		"MhswID":        mhswMaster.StudentID,
-		"Nama":          mhswMaster.NamaLengkap,
-		"ProdiID":       prodiData.KodeProdi, // Gunakan kode_prodi untuk kompatibilitas
-		"ProgramID":     mhswMaster.ProgramID,
-		"TahunID":       fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk), // Format: YYYYS (tahun + semester)
-		"TahunMasuk":    mhswMaster.TahunMasuk,
-		"SemesterMasukID": mhswMaster.SemesterMasukID,
-		"UKT":           mhswMaster.UKT,
-		"StatusMhswID":  "A", // Default aktif
+
+	// Ambil status dari tabel status_akademiks di database PNBP
+	statusMhswID := "N" // Default non-aktif
+	if mhswMaster.StatusAkademikID > 0 {
+		var statusAkademik models.StatusAkademik
+		errStatus := database.DBPNBP.Where("id = ?", mhswMaster.StatusAkademikID).First(&statusAkademik).Error
+		if errStatus == nil && statusAkademik.Kode != "" {
+			statusMhswID = statusAkademik.Kode
+			utils.Log.Info("Status akademik diambil dari tabel status_akademiks", map[string]interface{}{
+				"mhswID":           mhswMaster.StudentID,
+				"StatusAkademikID": mhswMaster.StatusAkademikID,
+				"Kode":             statusAkademik.Kode,
+				"Nama":             statusAkademik.Nama,
+			})
+		} else {
+			utils.Log.Warn("Status akademik tidak ditemukan di tabel status_akademiks", map[string]interface{}{
+				"mhswID":           mhswMaster.StudentID,
+				"StatusAkademikID": mhswMaster.StatusAkademikID,
+				"error":            errStatus,
+			})
+			// Fallback: jika tidak ditemukan, gunakan default "N"
+			statusMhswID = "N"
+		}
+	} else {
+		utils.Log.Warn("StatusAkademikID = 0, menggunakan default non-aktif", "mhswID", mhswMaster.StudentID)
 	}
-	
+
+	fullDataMap := map[string]interface{}{
+		"MhswID":           mhswMaster.StudentID,
+		"Nama":             mhswMaster.NamaLengkap,
+		"ProdiID":          prodiData.KodeProdi, // Gunakan kode_prodi untuk kompatibilitas
+		"ProgramID":        mhswMaster.ProgramID,
+		"TahunID":          fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk), // Format: YYYYS (tahun + semester)
+		"TahunMasuk":       mhswMaster.TahunMasuk,
+		"SemesterMasukID":  mhswMaster.SemesterMasukID,
+		"UKT":              mhswMaster.UKT,
+		"StatusMhswID":     statusMhswID,                // Diambil dari StatusAkademikID mahasiswa_masters
+		"StatusAkademikID": mhswMaster.StatusAkademikID, // Simpan juga StatusAkademikID untuk referensi
+	}
+
 	// Tambahkan data dari mahasiswa_masters untuk referensi
 	fullDataMap["mahasiswa_master_id"] = mhswMaster.ID
 	fullDataMap["master_tagihan_id"] = mhswMaster.MasterTagihanID
-	
+
 	jsonBytes, err := json.Marshal(fullDataMap)
 	if err != nil {
 		// Tangani error jika gagal marshal
@@ -353,14 +409,45 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 		BIPOTID = int(mhswMaster.MasterTagihan.BipotID)
 	}
 
+	// Ambil kelompok UKT (kel_ukt) dari detail_tagihan berdasarkan MasterTagihanID dan UKT nominal
+	// Catatan: mhswMaster.UKT adalah nominal (int64), tapi mahasiswa.UKT adalah kelompok UKT (string: "1"-"7")
+	kelompokUKT := ""
+	if mhswMaster.MasterTagihanID != 0 {
+		var detailTagihan models.DetailTagihan
+		// Cari detail_tagihan yang sesuai dengan MasterTagihanID dan nominal UKT
+		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+			First(&detailTagihan).Error
+		if errDetail == nil && detailTagihan.KelUKT != nil {
+			kelompokUKT = *detailTagihan.KelUKT
+			utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", "mhswID", mhswMaster.StudentID, "kelompokUKT", kelompokUKT, "nominalUKT", mhswMaster.UKT)
+		} else {
+			// Fallback: jika tidak ditemukan dengan nominal, coba cari berdasarkan MasterTagihanID saja
+			var detailTagihanFallback models.DetailTagihan
+			errFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
+				First(&detailTagihanFallback).Error
+			if errFallback == nil && detailTagihanFallback.KelUKT != nil {
+				kelompokUKT = *detailTagihanFallback.KelUKT
+				utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match nominal)", "mhswID", mhswMaster.StudentID, "kelompokUKT", kelompokUKT, "nominalUKT", mhswMaster.UKT)
+			} else {
+				utils.Log.Warn("Kelompok UKT tidak ditemukan di detail_tagihan, menggunakan nominal sebagai string", "mhswID", mhswMaster.StudentID, "nominalUKT", mhswMaster.UKT)
+				// Fallback terakhir: gunakan nominal sebagai string (untuk kompatibilitas)
+				kelompokUKT = strconv.Itoa(int(mhswMaster.UKT))
+			}
+		}
+	} else {
+		// Jika tidak ada MasterTagihanID, gunakan nominal sebagai string
+		kelompokUKT = strconv.Itoa(int(mhswMaster.UKT))
+		utils.Log.Warn("MasterTagihanID tidak ada, menggunakan nominal UKT sebagai kelompok", "mhswID", mhswMaster.StudentID, "UKT", kelompokUKT)
+	}
+
 	// Update data yang lain (nama, email, dll)
-	// UKT diambil langsung dari mahasiswa_masters, bukan dari SIMAK
+	// UKT (kelompok) diambil dari detail_tagihan berdasarkan MasterTagihanID dan nominal UKT
 	err = db.Model(&mahasiswa).Updates(models.Mahasiswa{
 		Nama:     mhswMaster.NamaLengkap,
 		Email:    mhswMaster.Email,
 		ProdiID:  prodi.ID,
 		BIPOTID:  strconv.Itoa(BIPOTID),
-		UKT:      strconv.Itoa(int(mhswMaster.UKT)), // UKT dari mahasiswa_masters
+		UKT:      kelompokUKT, // Kelompok UKT dari detail_tagihan, bukan nominal
 		FullData: string(jsonBytes),
 	}).Error
 	if err != nil {

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
@@ -274,10 +275,12 @@ func (w *paymentIdentifierWorker) updateBillToPaid(bill models.StudentBill, paym
 	}
 
 	// Buat StudentPayment record
+	// Gunakan FirstOrCreate untuk menghindari duplicate key error
+	paymentRef := fmt.Sprintf("INV-%d", payment.InvoiceID)
 	studentPayment := models.StudentPayment{
 		StudentID:    bill.StudentID,
 		AcademicYear: bill.AcademicYear,
-		PaymentRef:   fmt.Sprintf("INV-%d", payment.InvoiceID),
+		PaymentRef:   paymentRef,
 		Amount:       payment.Amount,
 		Bank:         "",
 		Method:       "VA",
@@ -285,18 +288,35 @@ func (w *paymentIdentifierWorker) updateBillToPaid(bill models.StudentBill, paym
 		Date:         payment.PaymentDate,
 	}
 
-	if err := w.db.Create(&studentPayment).Error; err != nil {
-		utils.Log.Errorf("Gagal create student_payment: %v", err)
-	} else {
-		// Buat allocation
+	// FirstOrCreate berdasarkan payment_ref (unique constraint)
+	errPayment := w.db.Where("payment_ref = ?", paymentRef).FirstOrCreate(&studentPayment).Error
+	if errPayment != nil {
+		utils.Log.Errorf("Gagal create/find student_payment: %v", errPayment)
+		return nil // Skip jika error, tapi tetap return nil karena bill sudah terupdate
+	}
+
+	// Buat allocation (cek dulu apakah sudah ada untuk menghindari duplicate)
+	var existingAllocation models.StudentPaymentAllocation
+	errAllocCheck := w.db.Where("student_payment_id = ? AND student_bill_id = ?", studentPayment.ID, bill.ID).
+		First(&existingAllocation).Error
+
+	if errAllocCheck != nil {
+		// Allocation belum ada, buat baru
 		allocation := models.StudentPaymentAllocation{
 			StudentPaymentID: studentPayment.ID,
 			StudentBillID:    bill.ID,
 			Amount:           payment.Amount,
 		}
 		if err := w.db.Create(&allocation).Error; err != nil {
-			utils.Log.Errorf("Gagal create student_payment_allocation: %v", err)
+			// Jika error duplicate, berarti sudah ada (race condition), skip
+			if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") {
+				utils.Log.Warnf("StudentPaymentAllocation sudah ada untuk payment_id=%d dan bill_id=%d (race condition)", studentPayment.ID, bill.ID)
+			} else {
+				utils.Log.Errorf("Gagal create student_payment_allocation: %v", err)
+			}
 		}
+	} else {
+		utils.Log.Infof("StudentPaymentAllocation sudah ada untuk payment_id=%d dan bill_id=%d", studentPayment.ID, bill.ID)
 	}
 
 	utils.Log.Infof("Updated student_bill ID %d to paid. Amount: %d, Payment Date: %s",

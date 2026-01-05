@@ -2,12 +2,13 @@ package services
 
 import (
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
-	"strconv"
-	"time"
 )
 
 type TagihanService interface {
@@ -121,88 +122,272 @@ func (r *tagihanService) HasCicilanMahasiswa(mahasiswa *models.Mahasiswa, financ
 	return false
 }
 
-// getUKTFromMahasiswaMasters mengambil UKT langsung dari mahasiswa_masters di database PNBP
+// getUKTFromMahasiswaMasters mengambil kelompok UKT (kel_ukt) dari mahasiswa_masters di database PNBP
+// Catatan: mhswMaster.UKT adalah nominal (int64), tapi yang dibutuhkan adalah kelompok UKT (string: "1"-"7")
 func (r *tagihanService) getUKTFromMahasiswaMasters(mhswID string) (string, error) {
 	var mhswMaster models.MahasiswaMaster
 	err := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
 	if err != nil {
 		return "", err
 	}
+
+	// Ambil kelompok UKT dari detail_tagihan berdasarkan MasterTagihanID dan nominal UKT
+	if mhswMaster.MasterTagihanID != 0 {
+		var detailTagihan models.DetailTagihan
+		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+			First(&detailTagihan).Error
+		if errDetail == nil && detailTagihan.KelUKT != nil {
+			return *detailTagihan.KelUKT, nil
+		}
+
+		// Fallback: cari berdasarkan MasterTagihanID saja
+		errFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
+			First(&detailTagihan).Error
+		if errFallback == nil && detailTagihan.KelUKT != nil {
+			return *detailTagihan.KelUKT, nil
+		}
+	}
+
+	// Fallback terakhir: gunakan nominal sebagai string (untuk kompatibilitas)
 	return strconv.Itoa(int(mhswMaster.UKT)), nil
 }
 
+// getBIPOTIDFromMahasiswaMasters mengambil BIPOTID langsung dari mahasiswa_masters -> master_tagihan di database PNBP
+func (r *tagihanService) getBIPOTIDFromMahasiswaMasters(mhswID string) (string, error) {
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mhswID).First(&mhswMaster).Error
+	if err != nil {
+		utils.Log.Warn("Mahasiswa tidak ditemukan di mahasiswa_masters", "mhswID", mhswID, "error", err)
+		return "", fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters: %w", err)
+	}
+
+	if mhswMaster.MasterTagihanID == 0 {
+		utils.Log.Warn("MasterTagihanID = 0 untuk mahasiswa", "mhswID", mhswID)
+		return "", fmt.Errorf("master_tagihan_id tidak ditemukan untuk mahasiswa %s (MasterTagihanID=0)", mhswID)
+	}
+
+	if mhswMaster.MasterTagihan == nil {
+		utils.Log.Warn("MasterTagihan nil untuk mahasiswa, mencoba load manual", "mhswID", mhswID, "MasterTagihanID", mhswMaster.MasterTagihanID)
+		// Coba load manual jika Preload gagal
+		var masterTagihan models.MasterTagihan
+		errLoad := database.DBPNBP.Where("id = ?", mhswMaster.MasterTagihanID).First(&masterTagihan).Error
+		if errLoad != nil {
+			return "", fmt.Errorf("gagal load master_tagihan untuk mahasiswa %s: %w", mhswID, errLoad)
+		}
+		mhswMaster.MasterTagihan = &masterTagihan
+	}
+
+	if mhswMaster.MasterTagihan.BipotID == 0 {
+		utils.Log.Warn("BipotID = 0 di master_tagihan", "mhswID", mhswID, "MasterTagihanID", mhswMaster.MasterTagihanID)
+		return "", fmt.Errorf("bipotid tidak ditemukan di master_tagihan untuk mahasiswa %s (BipotID=0)", mhswID)
+	}
+
+	BIPOTID := strconv.Itoa(int(mhswMaster.MasterTagihan.BipotID))
+	utils.Log.Info("BIPOTID diambil dari mahasiswa_masters", "mhswID", mhswID, "BIPOTID", BIPOTID, "MasterTagihanID", mhswMaster.MasterTagihanID)
+	return BIPOTID, nil
+}
+
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
+	utils.Log.Info("CreateNewTagihan dimulai", map[string]interface{}{
+		"mhswID":       mahasiswa.MhswID,
+		"nama":         mahasiswa.Nama,
+		"BIPOTID":      mahasiswa.BIPOTID,
+		"UKT":          mahasiswa.UKT,
+		"academicYear": financeYear.AcademicYear,
+	})
 
 	// interception: jika mahasiswa memiliki data cicilan generate dari cicilan tersebut
 	hasCicilan := r.GenerateCicilanMahasiswa(mahasiswa, financeYear)
 	if hasCicilan {
+		utils.Log.Info("Mahasiswa memiliki cicilan, generate dari cicilan", "mhswID", mahasiswa.MhswID)
 		return nil
 	}
 
-	// Pastikan UKT diambil dari mahasiswa_masters (prioritas dari PNBP, bukan SIMAK)
-	UKT := mahasiswa.UKT
-	if UKT == "" || UKT == "0" {
-		// Coba ambil dari mahasiswa_masters jika UKT kosong atau 0
-		uktFromMaster, err := r.getUKTFromMahasiswaMasters(mahasiswa.MhswID)
-		if err == nil && uktFromMaster != "" {
-			UKT = uktFromMaster
-			utils.Log.Info("UKT diambil dari mahasiswa_masters", "mhswID", mahasiswa.MhswID, "UKT", UKT)
+	// Ambil data dari mahasiswa_masters -> master_tagihan -> detail_tagihan
+	// JANGAN gunakan mahasiswa.BIPOTID atau mahasiswa.UKT, ambil langsung dari mahasiswa_masters
+	utils.Log.Info("Mengambil data dari mahasiswa_masters", "mhswID", mahasiswa.MhswID)
+
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
+	if err != nil {
+		utils.Log.Error("Mahasiswa tidak ditemukan di mahasiswa_masters", "mhswID", mahasiswa.MhswID, "error", err)
+		return fmt.Errorf("mahasiswa tidak ditemukan di mahasiswa_masters untuk %s: %w", mahasiswa.MhswID, err)
+	}
+
+	if mhswMaster.MasterTagihanID == 0 {
+		utils.Log.Error("MasterTagihanID = 0 untuk mahasiswa", "mhswID", mahasiswa.MhswID)
+		return fmt.Errorf("master_tagihan_id tidak ditemukan untuk mahasiswa %s (MasterTagihanID=0)", mahasiswa.MhswID)
+	}
+
+	// Load master_tagihan jika belum ter-load
+	if mhswMaster.MasterTagihan == nil {
+		utils.Log.Info("MasterTagihan nil, mencoba load manual", "mhswID", mahasiswa.MhswID, "MasterTagihanID", mhswMaster.MasterTagihanID)
+		var masterTagihan models.MasterTagihan
+		errLoad := database.DBPNBP.Where("id = ?", mhswMaster.MasterTagihanID).First(&masterTagihan).Error
+		if errLoad != nil {
+			utils.Log.Error("Gagal load master_tagihan", "mhswID", mahasiswa.MhswID, "MasterTagihanID", mhswMaster.MasterTagihanID, "error", errLoad)
+			return fmt.Errorf("gagal load master_tagihan untuk mahasiswa %s: %w", mahasiswa.MhswID, errLoad)
+		}
+		mhswMaster.MasterTagihan = &masterTagihan
+	}
+
+	// Catatan: BIPOTID tidak diperlukan lagi karena kita tidak menggunakan bill_template
+	// Langsung menggunakan detail_tagihan dari master_tagihan_id
+	if mhswMaster.MasterTagihan.BipotID == 0 {
+		utils.Log.Warn("BipotID = 0 di master_tagihan, lanjut tanpa BIPOTID (tidak diperlukan)", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"MasterTagihanID": mhswMaster.MasterTagihanID,
+		})
+	} else {
+		BIPOTID := strconv.Itoa(int(mhswMaster.MasterTagihan.BipotID))
+		utils.Log.Info("BIPOTID diambil dari master_tagihan (untuk referensi)", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"BIPOTID":         BIPOTID,
+			"MasterTagihanID": mhswMaster.MasterTagihanID,
+		})
+	}
+
+	// Ambil detail_tagihan untuk mendapatkan kel_ukt berdasarkan master_tagihan_id dan UKT nominal
+	var detailTagihan models.DetailTagihan
+	errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND nominal = ?", mhswMaster.MasterTagihanID, mhswMaster.UKT).
+		First(&detailTagihan).Error
+
+	var UKT string // Kelompok UKT (kel_ukt) dari detail_tagihan
+	if errDetail == nil && detailTagihan.KelUKT != nil {
+		UKT = *detailTagihan.KelUKT
+		utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"kelompokUKT":     UKT,
+			"nominalUKT":      mhswMaster.UKT,
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+		})
+	} else {
+		// Fallback: cari berdasarkan master_tagihan_id saja (ambil yang pertama)
+		utils.Log.Warn("Detail tagihan tidak ditemukan dengan nominal, mencoba fallback", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"nominalUKT":      mhswMaster.UKT,
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"error":           errDetail,
+		})
+		errFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
+			First(&detailTagihan).Error
+		if errFallback == nil && detailTagihan.KelUKT != nil {
+			UKT = *detailTagihan.KelUKT
+			utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match nominal)", map[string]interface{}{
+				"mhswID":          mahasiswa.MhswID,
+				"kelompokUKT":     UKT,
+				"nominalUKT":      mhswMaster.UKT,
+				"masterTagihanID": mhswMaster.MasterTagihanID,
+			})
+		} else {
+			// Fallback terakhir: gunakan nominal sebagai string
+			UKT = strconv.Itoa(int(mhswMaster.UKT))
+			utils.Log.Warn("Kelompok UKT tidak ditemukan, menggunakan nominal sebagai string", map[string]interface{}{
+				"mhswID":     mahasiswa.MhswID,
+				"UKT":        UKT,
+				"nominalUKT": mhswMaster.UKT,
+			})
 		}
 	}
 
-	var template models.BillTemplate
+	// Ambil semua detail_tagihan dari master_tagihan_id yang sesuai dengan UKT nominal
+	// JANGAN gunakan bill_template atau bill_template_items, langsung dari detail_tagihan
+	utils.Log.Info("Mencari detail_tagihan dari master_tagihan", map[string]interface{}{
+		"masterTagihanID": mhswMaster.MasterTagihanID,
+		"nominalUKT":      mhswMaster.UKT,
+		"kelompokUKT":     UKT,
+	})
 
-	// Ambil bill_template berdasarkan BIPOTID mahasiswa
-	if err := r.repo.DB.
-		Where("code = ?", mahasiswa.BIPOTID).
-		First(&template).Error; err != nil {
-		return fmt.Errorf("bill template not found for BIPOTID %s: %w", mahasiswa.BIPOTID, err)
+	var detailTagihans []models.DetailTagihan
+	// Ambil semua detail_tagihan yang sesuai dengan master_tagihan_id dan kel_ukt
+	errDetailList := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKT).
+		Find(&detailTagihans).Error
+
+	if errDetailList != nil {
+		utils.Log.Error("Gagal query detail_tagihan", map[string]interface{}{
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"kelompokUKT":     UKT,
+			"error":           errDetailList.Error(),
+		})
+		return fmt.Errorf("gagal query detail_tagihan untuk master_tagihan_id %d dan kel_ukt %s: %w", mhswMaster.MasterTagihanID, UKT, errDetailList)
 	}
 
-	// Ambil semua item UKT yang cocok - gunakan UKT dari mahasiswa_masters
-	var items []models.BillTemplateItem
-	if err := r.repo.DB.
-		Where(`bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, UKT, "0").
-		Find(&items).Error; err != nil {
-		return fmt.Errorf("bill_template_items not found for UKT %s: %w", UKT, err)
+	if len(detailTagihans) == 0 {
+		// Fallback: cari berdasarkan master_tagihan_id saja (tanpa filter kel_ukt)
+		utils.Log.Warn("Detail tagihan tidak ditemukan dengan kel_ukt, mencoba tanpa filter kel_ukt", map[string]interface{}{
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"kelompokUKT":     UKT,
+		})
+		errDetailFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
+			Find(&detailTagihans).Error
+		if errDetailFallback != nil {
+			utils.Log.Error("Gagal query detail_tagihan (fallback)", map[string]interface{}{
+				"masterTagihanID": mhswMaster.MasterTagihanID,
+				"error":           errDetailFallback.Error(),
+			})
+			return fmt.Errorf("gagal query detail_tagihan untuk master_tagihan_id %d: %w", mhswMaster.MasterTagihanID, errDetailFallback)
+		}
 	}
 
-	if len(items) == 0 {
-		utils.Log.Info("Last query : ", `bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, UKT, "0")
-		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", UKT)
+	if len(detailTagihans) == 0 {
+		utils.Log.Error("Tidak ada detail_tagihan yang ditemukan", map[string]interface{}{
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"kelompokUKT":     UKT,
+			"mhswID":          mahasiswa.MhswID,
+		})
+		return fmt.Errorf("tidak ada detail_tagihan yang ditemukan untuk master_tagihan_id %d dan kel_ukt %s (mahasiswa %s)", mhswMaster.MasterTagihanID, UKT, mahasiswa.MhswID)
 	}
+
+	utils.Log.Info("Detail tagihan ditemukan", "count", len(detailTagihans), "masterTagihanID", mhswMaster.MasterTagihanID, "kelompokUKT", UKT)
 
 	nominalBeasiswa := r.GetNominalBeasiswa(string(mahasiswa.MhswID), financeYear.AcademicYear)
-
 	utils.Log.Info("nominalBeasiswa:", nominalBeasiswa)
 
 	sisaBeasiswa := nominalBeasiswa
-	// Generate StudentBill berdasarkan item
-	for _, item := range items {
+	// Generate StudentBill langsung dari detail_tagihan
+	for _, dt := range detailTagihans {
 		nominalBeasiswaSaatIni := int64(0)
-		nominalTagihan := int64(item.Amount)
-		if sisaBeasiswa > 0 && sisaBeasiswa >= item.Amount {
-			sisaBeasiswa = sisaBeasiswa - item.Amount
-			nominalBeasiswaSaatIni = item.Amount
+		nominalTagihan := dt.Nominal
+		if sisaBeasiswa > 0 && sisaBeasiswa >= dt.Nominal {
+			sisaBeasiswa = sisaBeasiswa - dt.Nominal
+			nominalBeasiswaSaatIni = dt.Nominal
 			nominalTagihan = 0
 		} else if sisaBeasiswa > 0 {
 			nominalBeasiswaSaatIni = sisaBeasiswa
-			nominalTagihan = item.Amount - nominalBeasiswaSaatIni
+			nominalTagihan = dt.Nominal - nominalBeasiswaSaatIni
 		}
+
 		bill := models.StudentBill{
 			StudentID:          string(mahasiswa.MhswID),
 			AcademicYear:       financeYear.AcademicYear,
-			BillTemplateItemID: item.BillTemplateID,
-			Name:               item.AdditionalName,
+			BillTemplateItemID: 0, // Tidak menggunakan bill_template_item lagi
+			Name:               dt.Nama,
 			Amount:             nominalTagihan,
+			Beasiswa:           nominalBeasiswaSaatIni,
 			PaidAmount:         0,
 			CreatedAt:          time.Now(),
 			UpdatedAt:          time.Now(),
 		}
 
 		if err := r.repo.DB.Create(&bill).Error; err != nil {
-			return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
+			utils.Log.Error("Gagal membuat StudentBill", map[string]interface{}{
+				"mhswID":          mahasiswa.MhswID,
+				"detailTagihanID": dt.ID,
+				"nama":            dt.Nama,
+				"nominal":         dt.Nominal,
+				"error":           err.Error(),
+			})
+			return fmt.Errorf("gagal membuat tagihan mahasiswa dari detail_tagihan ID %d: %w", dt.ID, err)
 		}
+
+		utils.Log.Info("StudentBill berhasil dibuat dari detail_tagihan", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"detailTagihanID": dt.ID,
+			"nama":            dt.Nama,
+			"nominal":         dt.Nominal,
+			"amount":          nominalTagihan,
+			"beasiswa":        nominalBeasiswaSaatIni,
+		})
 	}
 
 	return nil
@@ -233,12 +418,12 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	mhswID := mahasiswa.MhswID
 	// Prioritas 1: Ambil TahunID dari mahasiswa_masters di database PNBP
 	TahunID := getTahunIDFromMahasiswaMasters(mhswID)
-	
+
 	// Prioritas 2: Fallback ke ParseFullData (untuk kompatibilitas dengan data SIMAK/lama)
 	if TahunID == "" {
 		TahunID = getTahunIDFormParsed(mahasiswa)
 	}
-	
+
 	// Prioritas 3: Fallback ke estimasi dari NPM (untuk data sangat lama)
 	if TahunID == "" {
 		TahunID = "20" + mhswID[0:2] + "1"
@@ -284,7 +469,7 @@ func getTahunIDFromMahasiswaMasters(mhswID string) string {
 	if err != nil {
 		return ""
 	}
-	
+
 	// TahunMasuk adalah int (contoh: 2023)
 	// SemesterMasukID adalah uint (1 = Ganjil, 2 = Genap, atau sesuai enum)
 	// Format TahunID: YYYYS (tahun + semester)
@@ -297,19 +482,19 @@ func getTahunIDFromMahasiswaMasters(mhswID string) string {
 			semesterMasuk = 1
 		}
 	}
-	
+
 	if mhswMaster.TahunMasuk > 0 {
 		TahunID := fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk)
 		utils.Log.Info("TahunID diambil dari mahasiswa_masters", "mhswID", mhswID, "TahunMasuk", mhswMaster.TahunMasuk, "SemesterMasukID", mhswMaster.SemesterMasukID, "TahunID", TahunID)
 		return TahunID
 	}
-	
+
 	return ""
 }
 
 func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
 	data := mahasiswa.ParseFullData()
-	
+
 	// Coba ambil TahunID langsung
 	tahunRaw, exists := data["TahunID"]
 	if exists {
@@ -329,14 +514,14 @@ func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
 			return TahunID
 		}
 	}
-	
+
 	// Fallback: coba ambil dari TahunMasuk jika ada
 	if tahunMasuk, ok := data["TahunMasuk"].(float64); ok {
 		TahunID := fmt.Sprintf("%.0f1", tahunMasuk) // Default semester 1
 		utils.Log.Info("TahunID dibuat dari TahunMasuk", "TahunMasuk", tahunMasuk, "TahunID", TahunID)
 		return TahunID
 	}
-	
+
 	utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
 	return ""
 
