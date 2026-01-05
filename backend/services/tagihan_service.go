@@ -416,21 +416,63 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	}
 
 	mhswID := mahasiswa.MhswID
-	// Prioritas 1: Ambil TahunID dari mahasiswa_masters di database PNBP
-	TahunID := getTahunIDFromMahasiswaMasters(mhswID)
+	// Ambil SemesterMasukID dari mahasiswa_masters di database PNBP
+	// SemesterMasukID adalah referensi ke budget_periods.id, bukan semester masuk (1/2)
+	var mhswMaster models.MahasiswaMaster
+	errMhswMaster := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
 
-	// Prioritas 2: Fallback ke ParseFullData (untuk kompatibilitas dengan data SIMAK/lama)
-	if TahunID == "" {
-		TahunID = getTahunIDFormParsed(mahasiswa)
+	var tahunIDAwal string
+
+	if errMhswMaster == nil && mhswMaster.SemesterMasukID > 0 {
+		// SemesterMasukID adalah referensi ke budget_periods.id
+		// Ambil budget_periods.kode sebagai tahunIDAwal
+		var budgetPeriod models.BudgetPeriod
+		errBudgetPeriod := database.DBPNBP.Where("id = ?", mhswMaster.SemesterMasukID).First(&budgetPeriod).Error
+		if errBudgetPeriod == nil && budgetPeriod.Kode != "" {
+			tahunIDAwal = budgetPeriod.Kode
+			utils.Log.Info("CreateNewTagihanPasca: TahunID awal diambil dari budget_periods berdasarkan SemesterMasukID", map[string]interface{}{
+				"mhswID":           mhswID,
+				"SemesterMasukID":  mhswMaster.SemesterMasukID,
+				"budgetPeriodID":   budgetPeriod.ID,
+				"budgetPeriodKode": budgetPeriod.Kode,
+				"tahunIDAwal":      tahunIDAwal,
+			})
+		} else {
+			utils.Log.Warn("CreateNewTagihanPasca: Budget period tidak ditemukan berdasarkan SemesterMasukID, fallback ke TahunMasuk", map[string]interface{}{
+				"mhswID":          mhswID,
+				"SemesterMasukID": mhswMaster.SemesterMasukID,
+				"error":           errBudgetPeriod,
+			})
+			// Fallback: gunakan TahunMasuk dengan default semester 1
+			if mhswMaster.TahunMasuk > 0 {
+				tahunIDAwal = fmt.Sprintf("%d1", mhswMaster.TahunMasuk)
+			} else {
+				return fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswID)
+			}
+		}
+	} else {
+		// Fallback: ambil dari FullData
+		if tahunIDData, ok := mahasiswa.ParseFullData()["TahunID"].(string); ok && tahunIDData != "" {
+			tahunIDAwal = tahunIDData
+			utils.Log.Info("CreateNewTagihanPasca: TahunID awal diambil dari FullData", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
+		} else if tahunMasukData, ok := mahasiswa.ParseFullData()["TahunMasuk"].(float64); ok {
+			// Fallback: buat dari TahunMasuk dengan default semester 1
+			tahunIDAwal = fmt.Sprintf("%.0f1", tahunMasukData)
+			utils.Log.Info("CreateNewTagihanPasca: TahunID awal dibuat dari TahunMasuk di FullData", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
+		} else {
+			// Fallback terakhir: estimasi dari NPM
+			if len(mhswID) >= 2 {
+				tahunMasukStr := "20" + mhswID[0:2] + "1"
+				tahunIDAwal = tahunMasukStr
+				utils.Log.Info("CreateNewTagihanPasca: TahunID awal diestimasi dari NPM", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
+			} else {
+				return fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswID)
+			}
+		}
 	}
 
-	// Prioritas 3: Fallback ke estimasi dari NPM (untuk data sangat lama)
-	if TahunID == "" {
-		TahunID = "20" + mhswID[0:2] + "1"
-		utils.Log.Info("TahunID diestimasi dari NPM", "mhswID", mhswID, "TahunID", TahunID)
-	}
 	financeCode := financeYear.Code
-	semesterSaatIni, err := r.HitungSemesterSaatIni(TahunID, financeCode)
+	semesterSaatIni, err := r.HitungSemesterSaatIni(tahunIDAwal, financeCode)
 	if err != nil {
 		return err
 	}
@@ -527,27 +569,60 @@ func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
 
 }
 
-// HitungSemesterSaatIni menghitung semester saat ini berdasarkan TahunID awal dan tahun akademik sekarang
+// HitungSemesterSaatIni menghitung semester saat ini berdasarkan tahun masuk (angkatan) dan budget_periods.kode
+// Rumus: semester = (tahun sekarang - tahun masuk) * 2 + semester sekarang - semester masuk + 1
+// Contoh: budget_periods.kode = 20252, angkatan = 2024, semester masuk = 1 → semester = (2025 - 2024) * 2 + 2 - 1 + 1 = 4
+// Contoh: budget_periods.kode = 20252, angkatan = 2025, semester masuk = 1 → semester = (2025 - 2025) * 2 + 2 - 1 + 1 = 2
 func (r *tagihanService) HitungSemesterSaatIni(tahunIDAwal string, tahunIDSekarang string) (int, error) {
-	utils.Log.Info("tahunAwal ", tahunIDAwal, "tahunSekarang ", tahunIDSekarang)
-	if len(tahunIDAwal) != 5 || len(tahunIDSekarang) != 5 {
-		return 0, fmt.Errorf("format TahunID tidak valid, harus 5 digit seperti 20241")
+	utils.Log.Info("HitungSemesterSaatIni", map[string]interface{}{
+		"tahunIDAwal":     tahunIDAwal,
+		"tahunIDSekarang": tahunIDSekarang,
+	})
+
+	if len(tahunIDSekarang) != 5 {
+		return 0, fmt.Errorf("format tahunIDSekarang tidak valid, harus 5 digit seperti 20251")
 	}
 
-	// Parsing tahun dan semester dari masing-masing TahunID
-	tahunAwal, err1 := strconv.Atoi(tahunIDAwal[:4])
-	semesterAwal, err2 := strconv.Atoi(tahunIDAwal[4:])
-	tahunSekarang, err3 := strconv.Atoi(tahunIDSekarang[:4])
-	semesterSekarang, err4 := strconv.Atoi(tahunIDSekarang[4:])
+	// Parsing tahun dan semester dari budget_periods.kode (tahunIDSekarang)
+	tahunSekarang, err1 := strconv.Atoi(tahunIDSekarang[:4])
+	semesterSekarang, err2 := strconv.Atoi(tahunIDSekarang[4:])
 
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
-		return 0, fmt.Errorf("gagal parsing tahun atau semester")
+	if err1 != nil || err2 != nil {
+		return 0, fmt.Errorf("gagal parsing tahun atau semester dari budget_periods.kode: %v, %v", err1, err2)
 	}
 
-	selisihTahun := tahunSekarang - tahunAwal
-	selisihSemester := (selisihTahun * 2) + (semesterSekarang - semesterAwal)
+	// Ambil tahun masuk (angkatan) dan semester masuk dari tahunIDAwal
+	var tahunMasuk, semesterMasuk int
+	if len(tahunIDAwal) == 5 {
+		// Jika tahunIDAwal format YYYYS, ambil tahun dan semester masuknya
+		tahunMasuk, err1 = strconv.Atoi(tahunIDAwal[:4])
+		semesterMasuk, err2 = strconv.Atoi(tahunIDAwal[4:])
+		if err1 != nil || err2 != nil {
+			return 0, fmt.Errorf("gagal parsing tahun atau semester masuk dari tahunIDAwal: %v, %v", err1, err2)
+		}
+	} else {
+		// Jika tahunIDAwal hanya tahun (4 digit), default semester masuk = 1
+		tahunMasuk, err1 = strconv.Atoi(tahunIDAwal)
+		semesterMasuk = 1 // Default semester masuk = 1 (Ganjil)
+		if err1 != nil {
+			return 0, fmt.Errorf("gagal parsing tahun masuk: %v", err1)
+		}
+	}
 
-	return selisihSemester + 1, nil
+	// Rumus: semester = (tahun sekarang - tahun masuk) * 2 + semester sekarang - semester masuk + 1
+	selisihTahun := tahunSekarang - tahunMasuk
+	semester := (selisihTahun * 2) + semesterSekarang - semesterMasuk + 1
+
+	utils.Log.Info("Perhitungan semester", map[string]interface{}{
+		"tahunMasuk":       tahunMasuk,
+		"semesterMasuk":    semesterMasuk,
+		"tahunSekarang":    tahunSekarang,
+		"semesterSekarang": semesterSekarang,
+		"selisihTahun":     selisihTahun,
+		"semester":         semester,
+	})
+
+	return semester, nil
 }
 
 func (r *tagihanService) SavePaymentConfirmation(studentBill models.StudentBill, vaNumber string, paymentDate string, objectName string) (*models.PaymentConfirmation, error) {

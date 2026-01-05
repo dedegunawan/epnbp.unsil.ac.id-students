@@ -1,11 +1,12 @@
 package repositories
 
 import (
+	"strconv"
+
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"gorm.io/gorm"
-	"strconv"
 )
 
 type TagihanRepository struct {
@@ -61,10 +62,70 @@ func (r *TagihanRepository) OverrideFinanceYear(financeYear *models.FinanceYear,
 
 	utils.Log.Info("Override Finance Year untuk mahasiswa:", mahasiswa.MhswID)
 
-	prodi, fakultas, errProdi, errFakultas := r.GetValidProdiPnbp(mahasiswa.Prodi.KodeProdi)
+	// Ambil prodi langsung dari mahasiswa_masters di database PNBP
+	var mhswMaster models.MahasiswaMaster
+	errMhswMaster := r.DBPNBP.Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
 
-	utils.Log.Info("Prodi:", prodi.KodeProdi, " - ", prodi.NamaProdi)
-	utils.Log.Info("Fakultas:", fakultas.KodeFakultas, " - ", fakultas.NamaFakultas)
+	var prodi *models.ProdiPnbp
+	var fakultas *models.FakultasPnbp
+	var errProdi, errFakultas error
+
+	if errMhswMaster == nil && mhswMaster.ProdiID > 0 {
+		// Ambil prodi dari database PNBP berdasarkan ProdiID dari mahasiswa_masters
+		var prodiData models.ProdiPnbp
+		errProdi = r.DBPNBP.Where("id = ?", mhswMaster.ProdiID).First(&prodiData).Error
+		if errProdi == nil {
+			prodi = &prodiData
+			// Ambil fakultas dari database PNBP berdasarkan FakultasID dari prodi
+			var fakultasData models.FakultasPnbp
+			errFakultas = r.DBPNBP.Where("id = ?", prodi.FakultasID).First(&fakultasData).Error
+			if errFakultas == nil {
+				fakultas = &fakultasData
+			}
+			utils.Log.Info("Prodi diambil dari mahasiswa_masters di database PNBP", map[string]interface{}{
+				"mhswID":       mahasiswa.MhswID,
+				"ProdiID":      mhswMaster.ProdiID,
+				"KodeProdi":    prodi.KodeProdi,
+				"FakultasID":   prodi.FakultasID,
+				"KodeFakultas": fakultas.KodeFakultas,
+			})
+		} else {
+			utils.Log.Warn("Gagal ambil prodi dari mahasiswa_masters, fallback ke kode prodi", map[string]interface{}{
+				"mhswID":  mahasiswa.MhswID,
+				"ProdiID": mhswMaster.ProdiID,
+				"error":   errProdi,
+			})
+			// Fallback: coba ambil dari kode_prodi jika ada di FullData
+			if prodiIDString := utils.GetStringFromAny(mahasiswa.ParseFullData()["ProdiID"]); prodiIDString != "" {
+				prodi, fakultas, errProdi, errFakultas = r.GetValidProdiPnbp(prodiIDString)
+			}
+		}
+	} else {
+		// Fallback: ambil dari kode_prodi di FullData atau Prodi lokal
+		prodiIDString := ""
+		if prodiIDString = utils.GetStringFromAny(mahasiswa.ParseFullData()["ProdiID"]); prodiIDString == "" && mahasiswa.Prodi.KodeProdi != "" {
+			prodiIDString = mahasiswa.Prodi.KodeProdi
+		}
+		if prodiIDString != "" {
+			utils.Log.Info("Fallback: ambil prodi dari kode_prodi", "mhswID", mahasiswa.MhswID, "kodeProdi", prodiIDString)
+			prodi, fakultas, errProdi, errFakultas = r.GetValidProdiPnbp(prodiIDString)
+		} else {
+			utils.Log.Warn("Tidak dapat mengambil prodi dari mahasiswa_masters maupun kode_prodi", "mhswID", mahasiswa.MhswID)
+			errProdi = gorm.ErrRecordNotFound
+			errFakultas = gorm.ErrRecordNotFound
+		}
+	}
+
+	if prodi != nil {
+		utils.Log.Info("Prodi:", prodi.KodeProdi, " - ", prodi.NamaProdi)
+	} else {
+		utils.Log.Warn("Prodi nil")
+	}
+	if fakultas != nil {
+		utils.Log.Info("Fakultas:", fakultas.KodeFakultas, " - ", fakultas.NamaFakultas)
+	} else {
+		utils.Log.Warn("Fakultas nil")
+	}
 	utils.Log.Info("Err Prodi:", errProdi)
 	utils.Log.Info("Err Fakultas:", errFakultas)
 
@@ -79,7 +140,7 @@ func (r *TagihanRepository) OverrideFinanceYear(financeYear *models.FinanceYear,
 	defaultPaymentEndDate := budgetPeriod.PaymentEndDate
 
 	// cek apakah ada fakultas mahasiswa di daftar override
-	if !skippedFakultas {
+	if !skippedFakultas && fakultas != nil {
 		utils.Log.Info("Lakukan override fakultas:", fakultas.KodeFakultas, " - ", fakultas.NamaFakultas)
 		overrideFakultas, err := r.GetBudgetOverride("fakultas", strconv.Itoa(int(fakultas.ID)), strconv.Itoa(int(budgetPeriod.ID)))
 		if err == nil && overrideFakultas != nil {
@@ -89,7 +150,7 @@ func (r *TagihanRepository) OverrideFinanceYear(financeYear *models.FinanceYear,
 	}
 
 	// cek apakah ada prodi mahasiswa di daftar override
-	if !skippedProdi {
+	if !skippedProdi && prodi != nil {
 		utils.Log.Info("Lakukan override prodi:", prodi.KodeProdi, " - ", prodi.NamaProdi)
 		overrideProdi, err := r.GetBudgetOverride("prodi", strconv.Itoa(int(prodi.ID)), strconv.Itoa(int(budgetPeriod.ID)))
 		if err == nil && overrideProdi != nil {
@@ -150,8 +211,16 @@ func (r *TagihanRepository) GetValidProdiPnbp(ProdiID string) (*models.ProdiPnbp
 	err := r.DBPNBP.
 		Where("kode_prodi = ?", ProdiID).First(&prodi).Error
 
-	err2 := r.DBPNBP.
-		Where("kode_fakultas = ?", ProdiID[:2]).First(&fakultas).Error
+	var err2 error
+	// Validasi panjang ProdiID sebelum melakukan slice
+	if len(ProdiID) >= 2 {
+		kodeFakultas := ProdiID[:2]
+		err2 = r.DBPNBP.
+			Where("kode_fakultas = ?", kodeFakultas).First(&fakultas).Error
+	} else {
+		utils.Log.Warn("ProdiID terlalu pendek untuk mengambil kode fakultas", "ProdiID", ProdiID, "length", len(ProdiID))
+		err2 = gorm.ErrRecordNotFound
+	}
 
 	return &prodi, &fakultas, err, err2
 
