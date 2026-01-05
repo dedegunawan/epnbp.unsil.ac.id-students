@@ -47,5 +47,6 @@ func MigrateEpnbp(db *gorm.DB) {
 		&PaymentCallback{},
 		&PaymentConfirmation{},
 		&PaymentCallback{},
+		&PaymentStatusLog{},
 	)
 }

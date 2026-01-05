@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
@@ -34,9 +35,22 @@ func (s *UserService) GetOrCreateBySSO(ssoID, email, name string) (*models.User,
 func (s *UserService) GetOrCreateByEmail(ssoID, email, name string) (*models.User, error) {
 	user, err := s.Repo.FindByEmail(email)
 	if err == nil {
+		// User sudah ada, update sso_id jika belum ada atau berbeda
+		if user.SSOID == nil || *user.SSOID != ssoID {
+			user.SSOID = &ssoID
+			// Update name jika berbeda
+			if name != "" && user.Name != name {
+				user.Name = name
+			}
+			if err := s.Repo.Update(user); err != nil {
+				utils.Log.Error("Failed to update user sso_id:", err)
+				// Tetap return user meskipun update gagal
+			}
+		}
 		return user, nil
 	}
 
+	// User belum ada, buat baru
 	user = &models.User{
 		Name:     name,
 		Email:    email,
@@ -124,7 +138,7 @@ func (s *UserService) UpdateUser(ID string, Name string, Email string, Password 
 
 func (s *UserService) DeleteUser(ID string) error {
 	user, _ := s.Repo.FindByID(ID)
-	if user != nil || user.ID.String() != "" {
+	if user != nil && user.ID.String() != "" {
 		return s.Repo.Delete(user)
 	}
 	return nil

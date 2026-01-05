@@ -1,11 +1,12 @@
 package routes
 
 import (
+	"net/http"
+
 	"github.com/dedegunawan/backend-ujian-telp-v5/auth"
 	"github.com/dedegunawan/backend-ujian-telp-v5/controllers"
 	"github.com/dedegunawan/backend-ujian-telp-v5/middleware"
 	"github.com/gin-gonic/gin"
-	"net/http"
 )
 
 func SetupRouter() *gin.Engine {
@@ -15,7 +16,6 @@ func SetupRouter() *gin.Engine {
 
 	r.GET("/", func(context *gin.Context) {
 		context.Redirect(http.StatusMovedPermanently, "/sso-login")
-		return
 	})
 
 	auth.InitOIDC()
@@ -35,6 +35,16 @@ func SetupRouter() *gin.Engine {
 		// Payment status endpoints
 		v1.GET("/payment-status", middleware.RequireAuthFromTokenDB(), controllers.GetPaymentStatus)
 		v1.GET("/payment-status/summary", middleware.RequireAuthFromTokenDB(), controllers.GetPaymentStatusSummary)
+		v1.PUT("/payment-status/:id", middleware.RequireAuthFromTokenDB(), controllers.UpdatePaymentStatus)
+
+		// Student bills endpoints (public, no auth required)
+		v1.GET("/student-bills", controllers.GetAllStudentBills)
+
+		// Payment status logs endpoints (public, no auth required)
+		v1.GET("/payment-status-logs", controllers.GetAllPaymentStatusLogs)
+
+		// Payment identifier worker endpoints (public, no auth required)
+		v1.POST("/payment-identifier/trigger", controllers.TriggerPaymentIdentifierWorker)
 
 		v1.GET("/payment-callback", controllers.PaymentCallbackHandler)
 		v1.POST("/payment-callback", controllers.PaymentCallbackHandler)

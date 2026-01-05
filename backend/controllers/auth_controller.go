@@ -167,13 +167,14 @@ func CallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// sinkronkan dengan data npm simak
+	// sinkronkan dengan data npm dari mahasiswa_masters (PNBP) terlebih dahulu, fallback ke SIMAK
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
 	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
-	err = mahasiswaService.CreateFromSimak(utils.GetEmailPrefix(claims.Email))
+	err = mahasiswaService.CreateFromMasterMahasiswa(utils.GetEmailPrefix(claims.Email))
 
 	if err != nil {
-		err = mahasiswaService.CreateFromMasterMahasiswa(utils.GetEmailPrefix(claims.Email))
+		// Fallback ke SIMAK jika mahasiswa_masters tidak ditemukan
+		err = mahasiswaService.CreateFromSimak(utils.GetEmailPrefix(claims.Email))
 	}
 
 	if err != nil {

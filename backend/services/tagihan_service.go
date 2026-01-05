@@ -121,12 +121,33 @@ func (r *tagihanService) HasCicilanMahasiswa(mahasiswa *models.Mahasiswa, financ
 	return false
 }
 
+// getUKTFromMahasiswaMasters mengambil UKT langsung dari mahasiswa_masters di database PNBP
+func (r *tagihanService) getUKTFromMahasiswaMasters(mhswID string) (string, error) {
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(int(mhswMaster.UKT)), nil
+}
+
 func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
 
 	// interception: jika mahasiswa memiliki data cicilan generate dari cicilan tersebut
 	hasCicilan := r.GenerateCicilanMahasiswa(mahasiswa, financeYear)
 	if hasCicilan {
 		return nil
+	}
+
+	// Pastikan UKT diambil dari mahasiswa_masters (prioritas dari PNBP, bukan SIMAK)
+	UKT := mahasiswa.UKT
+	if UKT == "" || UKT == "0" {
+		// Coba ambil dari mahasiswa_masters jika UKT kosong atau 0
+		uktFromMaster, err := r.getUKTFromMahasiswaMasters(mahasiswa.MhswID)
+		if err == nil && uktFromMaster != "" {
+			UKT = uktFromMaster
+			utils.Log.Info("UKT diambil dari mahasiswa_masters", "mhswID", mahasiswa.MhswID, "UKT", UKT)
+		}
 	}
 
 	var template models.BillTemplate
@@ -138,17 +159,17 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 		return fmt.Errorf("bill template not found for BIPOTID %s: %w", mahasiswa.BIPOTID, err)
 	}
 
-	// Ambil semua item UKT yang cocok
+	// Ambil semua item UKT yang cocok - gunakan UKT dari mahasiswa_masters
 	var items []models.BillTemplateItem
 	if err := r.repo.DB.
-		Where(`bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, mahasiswa.UKT, "0").
+		Where(`bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, UKT, "0").
 		Find(&items).Error; err != nil {
-		return fmt.Errorf("bill_template_items not found for UKT %s: %w", mahasiswa.UKT, err)
+		return fmt.Errorf("bill_template_items not found for UKT %s: %w", UKT, err)
 	}
 
 	if len(items) == 0 {
-		utils.Log.Info("Last query : ", `bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, mahasiswa.UKT, "0")
-		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", mahasiswa.UKT)
+		utils.Log.Info("Last query : ", `bill_template_id = ? AND ukt = ? AND "BIPOTNamaID" = ?`, template.ID, UKT, "0")
+		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", UKT)
 	}
 
 	nominalBeasiswa := r.GetNominalBeasiswa(string(mahasiswa.MhswID), financeYear.AcademicYear)
@@ -210,9 +231,18 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	}
 
 	mhswID := mahasiswa.MhswID
-	TahunID := getTahunIDFormParsed(mahasiswa)
+	// Prioritas 1: Ambil TahunID dari mahasiswa_masters di database PNBP
+	TahunID := getTahunIDFromMahasiswaMasters(mhswID)
+	
+	// Prioritas 2: Fallback ke ParseFullData (untuk kompatibilitas dengan data SIMAK/lama)
+	if TahunID == "" {
+		TahunID = getTahunIDFormParsed(mahasiswa)
+	}
+	
+	// Prioritas 3: Fallback ke estimasi dari NPM (untuk data sangat lama)
 	if TahunID == "" {
 		TahunID = "20" + mhswID[0:2] + "1"
+		utils.Log.Info("TahunID diestimasi dari NPM", "mhswID", mhswID, "TahunID", TahunID)
 	}
 	financeCode := financeYear.Code
 	semesterSaatIni, err := r.HitungSemesterSaatIni(TahunID, financeCode)
@@ -247,27 +277,68 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 	return nil
 }
 
+// getTahunIDFromMahasiswaMasters mengambil TahunID langsung dari mahasiswa_masters di database PNBP
+func getTahunIDFromMahasiswaMasters(mhswID string) string {
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
+	if err != nil {
+		return ""
+	}
+	
+	// TahunMasuk adalah int (contoh: 2023)
+	// SemesterMasukID adalah uint (1 = Ganjil, 2 = Genap, atau sesuai enum)
+	// Format TahunID: YYYYS (tahun + semester)
+	// Jika SemesterMasukID tidak ada, default ke semester 1 (Ganjil)
+	semesterMasuk := 1
+	if mhswMaster.SemesterMasukID > 0 {
+		semesterMasuk = int(mhswMaster.SemesterMasukID)
+		// Pastikan semester hanya 1 atau 2
+		if semesterMasuk > 2 {
+			semesterMasuk = 1
+		}
+	}
+	
+	if mhswMaster.TahunMasuk > 0 {
+		TahunID := fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk)
+		utils.Log.Info("TahunID diambil dari mahasiswa_masters", "mhswID", mhswID, "TahunMasuk", mhswMaster.TahunMasuk, "SemesterMasukID", mhswMaster.SemesterMasukID, "TahunID", TahunID)
+		return TahunID
+	}
+	
+	return ""
+}
+
 func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
 	data := mahasiswa.ParseFullData()
+	
+	// Coba ambil TahunID langsung
 	tahunRaw, exists := data["TahunID"]
-	if !exists {
-		utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
-		return ""
+	if exists {
+		var TahunID string
+		switch v := tahunRaw.(type) {
+		case string:
+			TahunID = v
+		case float64:
+			TahunID = fmt.Sprintf("%.0f", v)
+		case int:
+			TahunID = strconv.Itoa(v)
+		default:
+			utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
+			return ""
+		}
+		if TahunID != "" {
+			return TahunID
+		}
 	}
-
-	var TahunID string
-	switch v := tahunRaw.(type) {
-	case string:
-		TahunID = v
-	case float64:
-		TahunID = fmt.Sprintf("%.0f", v)
-	case int:
-		TahunID = strconv.Itoa(v)
-	default:
-		utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
-		return ""
+	
+	// Fallback: coba ambil dari TahunMasuk jika ada
+	if tahunMasuk, ok := data["TahunMasuk"].(float64); ok {
+		TahunID := fmt.Sprintf("%.0f1", tahunMasuk) // Default semester 1
+		utils.Log.Info("TahunID dibuat dari TahunMasuk", "TahunMasuk", tahunMasuk, "TahunID", TahunID)
+		return TahunID
 	}
-	return TahunID
+	
+	utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
+	return ""
 
 }
 

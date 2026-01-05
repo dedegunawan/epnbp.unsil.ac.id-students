@@ -303,7 +303,33 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 		return fmt.Errorf("gagal update prodi: %w", err)
 	}
 
-	jsonBytes, err := json.Marshal(mhswMaster)
+	// Buat FullData dengan format yang kompatibel untuk tagihan lookup
+	// Termasuk TahunMasuk, ProdiID, ProgramID yang diperlukan untuk lookup tagihan
+	semesterMasuk := 1
+	if mhswMaster.SemesterMasukID > 0 {
+		semesterMasuk = int(mhswMaster.SemesterMasukID)
+		if semesterMasuk > 2 {
+			semesterMasuk = 1 // Pastikan hanya 1 atau 2
+		}
+	}
+	
+	fullDataMap := map[string]interface{}{
+		"MhswID":        mhswMaster.StudentID,
+		"Nama":          mhswMaster.NamaLengkap,
+		"ProdiID":       prodiData.KodeProdi, // Gunakan kode_prodi untuk kompatibilitas
+		"ProgramID":     mhswMaster.ProgramID,
+		"TahunID":       fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk), // Format: YYYYS (tahun + semester)
+		"TahunMasuk":    mhswMaster.TahunMasuk,
+		"SemesterMasukID": mhswMaster.SemesterMasukID,
+		"UKT":           mhswMaster.UKT,
+		"StatusMhswID":  "A", // Default aktif
+	}
+	
+	// Tambahkan data dari mahasiswa_masters untuk referensi
+	fullDataMap["mahasiswa_master_id"] = mhswMaster.ID
+	fullDataMap["master_tagihan_id"] = mhswMaster.MasterTagihanID
+	
+	jsonBytes, err := json.Marshal(fullDataMap)
 	if err != nil {
 		// Tangani error jika gagal marshal
 		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
@@ -328,12 +354,13 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	}
 
 	// Update data yang lain (nama, email, dll)
+	// UKT diambil langsung dari mahasiswa_masters, bukan dari SIMAK
 	err = db.Model(&mahasiswa).Updates(models.Mahasiswa{
 		Nama:     mhswMaster.NamaLengkap,
 		Email:    mhswMaster.Email,
 		ProdiID:  prodi.ID,
 		BIPOTID:  strconv.Itoa(BIPOTID),
-		UKT:      strconv.Itoa(int(mhswMaster.UKT)),
+		UKT:      strconv.Itoa(int(mhswMaster.UKT)), // UKT dari mahasiswa_masters
 		FullData: string(jsonBytes),
 	}).Error
 	if err != nil {

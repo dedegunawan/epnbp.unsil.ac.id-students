@@ -3,10 +3,11 @@ package middleware
 import (
 	"context"
 	"errors"
-	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
-	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"net/http"
 	"strings"
+
+	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 
 	"github.com/dedegunawan/backend-ujian-telp-v5/auth"
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
@@ -58,7 +59,7 @@ func RequireAuthFromTokenDB() gin.HandlerFunc {
 		c.Set("sso_id", claims.Sub)
 		c.Set("email", claims.Email)
 		c.Set("name", claims.Name)
-		
+
 		c.Next()
 	}
 }

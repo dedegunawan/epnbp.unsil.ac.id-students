@@ -39,6 +39,18 @@ func main() {
 	go paymentWorker.StartWorker("PaymentStatusWorker-1")
 	utils.Log.Info("✅ Payment Status Worker started")
 
+	// Initialize Payment Identifier Worker
+	paymentIdentifierWorker := services.NewPaymentIdentifierWorker(
+		database.DB,
+		database.DBPNBP,
+		epnbpRepo,
+		*tagihanRepo,
+	)
+
+	// Start Payment Identifier Worker
+	go paymentIdentifierWorker.StartWorker("PaymentIdentifierWorker-1")
+	utils.Log.Info("✅ Payment Identifier Worker started")
+
 	// Uncomment if you need other workers
 	//worker := services.NewWorkerService(database.DB)
 	//sintesys := services.NewSintesys(os.Getenv("SINTESYS_APP_URL"), os.Getenv("SINTESYS_APP_TOKEN"))

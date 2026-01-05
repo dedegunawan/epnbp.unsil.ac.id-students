@@ -2,12 +2,6 @@ package controllers
 
 import (
 	"fmt"
-	"github.com/dedegunawan/backend-ujian-telp-v5/database"
-	"github.com/dedegunawan/backend-ujian-telp-v5/models"
-	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
-	"github.com/dedegunawan/backend-ujian-telp-v5/services"
-	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
-	"github.com/gin-gonic/gin"
 	"io"
 	"math/rand"
 	"net/http"
@@ -15,24 +9,108 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/dedegunawan/backend-ujian-telp-v5/database"
+	"github.com/dedegunawan/backend-ujian-telp-v5/models"
+	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
+	"github.com/dedegunawan/backend-ujian-telp-v5/services"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
+	"github.com/gin-gonic/gin"
 )
 
 func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
 	userRepo := repositories.UserRepository{DB: database.DB}
 	ssoID := c.GetString("sso_id")
-	utils.Log.Info("mahasiswa", "email", ssoID)
-	user, err := userRepo.FindBySSOID(ssoID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	email := c.GetString("email")
+	name := c.GetString("name")
+
+	utils.Log.Info("getMahasiswa", "sso_id", ssoID, "email", email, "name", name)
+
+	var user *models.User
+	var err error
+
+	// Coba cari berdasarkan sso_id terlebih dahulu
+	if ssoID != "" {
+		user, err = userRepo.FindBySSOID(ssoID)
+		if err == nil && user != nil {
+			utils.Log.Info("User found by sso_id:", ssoID)
+		} else {
+			utils.Log.Info("User not found by sso_id:", ssoID, "error:", err)
+		}
+	}
+
+	// Jika tidak ditemukan berdasarkan sso_id, coba cari berdasarkan email
+	if user == nil && email != "" {
+		utils.Log.Info("Trying to find user by email:", email)
+		user, err = userRepo.FindByEmail(email)
+		if err == nil && user != nil {
+			utils.Log.Info("User found by email:", email, "user_id:", user.ID.String())
+			// Update sso_id jika belum ada atau berbeda
+			if user.SSOID == nil || (ssoID != "" && *user.SSOID != ssoID) {
+				oldSSOID := "nil"
+				if user.SSOID != nil {
+					oldSSOID = *user.SSOID
+				}
+				utils.Log.Info("Updating user sso_id from", oldSSOID, "to", ssoID)
+				user.SSOID = &ssoID
+				if updateErr := userRepo.Update(user); updateErr != nil {
+					utils.Log.Error("Failed to update user sso_id:", updateErr)
+				} else {
+					utils.Log.Info("Updated user sso_id successfully:", ssoID)
+				}
+			}
+		} else {
+			utils.Log.Info("User not found by email:", email, "error:", err)
+		}
+	} else if user == nil {
+		utils.Log.Warn("Cannot search by email - email is empty or user already found")
+	}
+
+	// Jika user masih tidak ditemukan, buat user baru dari token claims
+	if user == nil {
+		if email == "" {
+			utils.Log.Error("Cannot create user - email is empty", "sso_id", ssoID, "name", name)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required but not found in token"})
+			return nil, nil, true
+		}
+		if ssoID == "" {
+			utils.Log.Error("Cannot create user - sso_id is empty", "email", email, "name", name)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "SSO ID is required but not found in token"})
+			return nil, nil, true
+		}
+
+		utils.Log.Info("Creating new user from token claims", "sso_id", ssoID, "email", email, "name", name)
+		userService := services.UserService{Repo: &userRepo}
+		user, err = userService.GetOrCreateByEmail(ssoID, email, name)
+		if err != nil {
+			utils.Log.Error("Failed to create user:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
+			return nil, nil, true
+		}
+		utils.Log.Info("User created successfully:", user.ID.String(), "email:", user.Email, "sso_id:", func() string {
+			if user.SSOID != nil {
+				return *user.SSOID
+			}
+			return "nil"
+		}())
+	}
+
+	if user == nil {
+		errorMsg := "User not found and could not be created"
+		utils.Log.Error("User not found", "sso_id", ssoID, "email", email, "error", errorMsg)
+		c.JSON(http.StatusBadRequest, gin.H{"error": errorMsg})
 		return nil, nil, true
 	}
-	utils.Log.Info("mahasiswa", "email")
 
 	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
-	email := user.Email
-	mahasiswa, _ := mahasiswaRepo.FindByEmailPattern(email)
+	userEmail := user.Email
+	mahasiswa, _ := mahasiswaRepo.FindByEmailPattern(userEmail)
 
-	utils.Log.Info("mahasiswa", "email", email, mahasiswa)
+	mahasiswaID := "nil"
+	if mahasiswa != nil {
+		mahasiswaID = mahasiswa.MhswID
+	}
+	utils.Log.Info("mahasiswa found", "email", userEmail, "mahasiswa_id", mahasiswaID)
 
 	return user, mahasiswa, false
 }
@@ -72,7 +150,14 @@ func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
 		return 0, fmt.Errorf("Tahun aktif tidak ditemukan: %w", err)
 	}
 
-	TahunID := getTahunIDFormParsed(mahasiswa)
+	// Prioritas 1: Ambil TahunID dari mahasiswa_masters di database PNBP
+	TahunID := getTahunIDFromMahasiswaMasters(mahasiswa.MhswID)
+	
+	// Prioritas 2: Fallback ke ParseFullData (untuk kompatibilitas dengan data SIMAK/lama)
+	if TahunID == "" {
+		TahunID = getTahunIDFormParsed(mahasiswa)
+	}
+	
 	if TahunID != "" {
 		return tagihanService.HitungSemesterSaatIni(TahunID, activeYear.AcademicYear)
 	}
@@ -80,27 +165,68 @@ func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
 	return 0, fmt.Errorf("TahunID tidak ditemukan pada data mahasiswa")
 }
 
+// getTahunIDFromMahasiswaMasters mengambil TahunID langsung dari mahasiswa_masters di database PNBP
+func getTahunIDFromMahasiswaMasters(mhswID string) string {
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
+	if err != nil {
+		return ""
+	}
+	
+	// TahunMasuk adalah int (contoh: 2023)
+	// SemesterMasukID adalah uint (1 = Ganjil, 2 = Genap, atau sesuai enum)
+	// Format TahunID: YYYYS (tahun + semester)
+	// Jika SemesterMasukID tidak ada, default ke semester 1 (Ganjil)
+	semesterMasuk := 1
+	if mhswMaster.SemesterMasukID > 0 {
+		semesterMasuk = int(mhswMaster.SemesterMasukID)
+		// Pastikan semester hanya 1 atau 2
+		if semesterMasuk > 2 {
+			semesterMasuk = 1
+		}
+	}
+	
+	if mhswMaster.TahunMasuk > 0 {
+		TahunID := fmt.Sprintf("%d%d", mhswMaster.TahunMasuk, semesterMasuk)
+		utils.Log.Info("TahunID diambil dari mahasiswa_masters", "mhswID", mhswID, "TahunMasuk", mhswMaster.TahunMasuk, "SemesterMasukID", mhswMaster.SemesterMasukID, "TahunID", TahunID)
+		return TahunID
+	}
+	
+	return ""
+}
+
 func getTahunIDFormParsed(mahasiswa *models.Mahasiswa) string {
 	data := mahasiswa.ParseFullData()
+	
+	// Coba ambil TahunID langsung
 	tahunRaw, exists := data["TahunID"]
-	if !exists {
-		utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
-		return ""
+	if exists {
+		var TahunID string
+		switch v := tahunRaw.(type) {
+		case string:
+			TahunID = v
+		case float64:
+			TahunID = fmt.Sprintf("%.0f", v)
+		case int:
+			TahunID = strconv.Itoa(v)
+		default:
+			utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
+			return ""
+		}
+		if TahunID != "" {
+			return TahunID
+		}
 	}
-
-	var TahunID string
-	switch v := tahunRaw.(type) {
-	case string:
-		TahunID = v
-	case float64:
-		TahunID = fmt.Sprintf("%.0f", v)
-	case int:
-		TahunID = strconv.Itoa(v)
-	default:
-		utils.Log.Info("TahunID ditemukan tapi tipe tidak dikenali", "value", tahunRaw)
-		return ""
+	
+	// Fallback: coba ambil dari TahunMasuk jika ada
+	if tahunMasuk, ok := data["TahunMasuk"].(float64); ok {
+		TahunID := fmt.Sprintf("%.0f1", tahunMasuk) // Default semester 1
+		utils.Log.Info("TahunID dibuat dari TahunMasuk", "TahunMasuk", tahunMasuk, "TahunID", TahunID)
+		return TahunID
 	}
-	return TahunID
+	
+	utils.Log.Info("Field TahunID tidak ditemukan pada data mahasiswa", "data", data)
+	return ""
 
 }
 

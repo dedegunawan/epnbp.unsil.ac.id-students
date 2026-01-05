@@ -185,10 +185,12 @@ func (r *TagihanRepository) GetAllUnpaidBillsExcept(studentID string, academicYe
 	var tahunUnpaidList []TahunUnpaid
 	err := r.DB.
 		Table("student_bills").
-		Select("academic_year, SUM((quantity * amount) - paid_amount) AS total_unpaid").
-		Where("student_id = ? AND academic_year <> ? AND ((quantity * amount) - paid_amount) > 0", studentID, academicYear).
-		Group("academic_year").
-		Order("academic_year ASC").
+		Select("student_bills.academic_year, SUM((student_bills.quantity * student_bills.amount) - student_bills.paid_amount) AS total_unpaid").
+		Joins("INNER JOIN finance_years ON finance_years.academic_year = student_bills.academic_year").
+		Where("student_bills.student_id = ? AND student_bills.academic_year <> ? AND ((student_bills.quantity * student_bills.amount) - student_bills.paid_amount) > 0", studentID, academicYear).
+		Where("finance_years.is_active = ?", true).
+		Group("student_bills.academic_year").
+		Order("student_bills.academic_year ASC").
 		Scan(&tahunUnpaidList).Error
 	if err != nil {
 		return nil, err
@@ -210,11 +212,13 @@ func (r *TagihanRepository) GetAllUnpaidBillsExcept(studentID string, academicYe
 		}
 	}
 
-	// Ambil ulang semua tagihan detail
+	// Ambil ulang semua tagihan detail - hanya dari finance year yang aktif
 	var bills []models.StudentBill
-	err = r.DB.
-		Where("student_id = ? AND academic_year <> ? AND ((quantity * amount) - paid_amount) > 0", studentID, academicYear).
-		Order("created_at ASC").
+	err = r.DB.Model(&models.StudentBill{}).
+		Joins("INNER JOIN finance_years ON finance_years.academic_year = student_bills.academic_year").
+		Where("student_bills.student_id = ? AND student_bills.academic_year <> ? AND ((student_bills.quantity * student_bills.amount) - student_bills.paid_amount) > 0", studentID, academicYear).
+		Where("finance_years.is_active = ?", true).
+		Order("student_bills.created_at ASC").
 		Find(&bills).Error
 	if err != nil {
 		return bills, err
@@ -282,9 +286,11 @@ func (r *TagihanRepository) GetAllPayUrlByStudentBillID(studentBillID uint) ([]m
 // Ambil tagihan mahasiswa berdasarkan student_id & academic_year
 func (r *TagihanRepository) GetAllPaidBillsExcept(studentID string, academicYear string) ([]models.StudentBill, error) {
 	var bills []models.StudentBill
-	err := r.DB.
-		Where("student_id = ? AND academic_year <> ? and ( (quantity * amount ) - paid_amount) <= 0 ", studentID, academicYear).
-		Order("created_at ASC").
+	err := r.DB.Model(&models.StudentBill{}).
+		Joins("INNER JOIN finance_years ON finance_years.academic_year = student_bills.academic_year").
+		Where("student_bills.student_id = ? AND student_bills.academic_year <> ? AND ((student_bills.quantity * student_bills.amount) - student_bills.paid_amount) <= 0", studentID, academicYear).
+		Where("finance_years.is_active = ?", true).
+		Order("student_bills.created_at ASC").
 		Find(&bills).Error
 	return bills, err
 }

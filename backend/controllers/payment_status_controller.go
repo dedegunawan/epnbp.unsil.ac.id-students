@@ -286,3 +286,163 @@ func GetPaymentStatusSummary(c *gin.Context) {
 
 	c.JSON(http.StatusOK, summary)
 }
+
+// UpdatePaymentStatusRequest request untuk update status pembayaran
+type UpdatePaymentStatusRequest struct {
+	PaidAmount   int64  `json:"paid_amount" binding:"required"`   // Jumlah yang dibayar (bisa partial atau full)
+	PaymentDate  string `json:"payment_date"`                     // Format: "2006-01-02 15:04:05" atau "2006-01-02"
+	PaymentMethod string `json:"payment_method"`                   // VA, Transfer, Tunai, etc.
+	Bank         string `json:"bank"`                              // Nama bank (optional)
+	PaymentRef   string `json:"payment_ref"`                       // Referensi pembayaran (optional)
+	Note         string `json:"note"`                              // Catatan (optional)
+}
+
+// UpdatePaymentStatus PUT /api/v1/payment-status/:id
+// Mengupdate status pembayaran untuk tagihan tertentu
+func UpdatePaymentStatus(c *gin.Context) {
+	studentBillIDStr := c.Param("id")
+	studentBillID, err := strconv.ParseUint(studentBillIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid student_bill_id"})
+		return
+	}
+
+	var req UpdatePaymentStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Ambil student bill
+	var studentBill models.StudentBill
+	if err := database.DB.Preload("Mahasiswa").First(&studentBill, uint(studentBillID)).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Student bill not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tagihan"})
+		return
+	}
+
+	// Validasi paid_amount
+	netAmount := studentBill.NetAmount()
+	if req.PaidAmount < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "paid_amount tidak boleh negatif"})
+		return
+	}
+
+	if req.PaidAmount > netAmount {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "paid_amount tidak boleh lebih besar dari net_amount"})
+		return
+	}
+
+	// Parse payment date
+	var paymentDate time.Time
+	if req.PaymentDate != "" {
+		// Coba format dengan waktu
+		paymentDate, err = time.Parse("2006-01-02 15:04:05", req.PaymentDate)
+		if err != nil {
+			// Coba format tanpa waktu
+			paymentDate, err = time.Parse("2006-01-02", req.PaymentDate)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Format payment_date tidak valid. Gunakan '2006-01-02 15:04:05' atau '2006-01-02'"})
+				return
+			}
+		}
+	} else {
+		paymentDate = time.Now()
+	}
+
+	// Set default payment method
+	paymentMethod := req.PaymentMethod
+	if paymentMethod == "" {
+		paymentMethod = "Manual"
+	}
+
+	// Set default payment ref
+	paymentRef := req.PaymentRef
+	if paymentRef == "" {
+		paymentRef = "MANUAL-" + time.Now().Format("20060102150405")
+	}
+
+	// Update student bill paid_amount
+	oldPaidAmount := studentBill.PaidAmount
+	studentBill.PaidAmount = req.PaidAmount
+	if studentBill.PaidAmount > netAmount {
+		studentBill.PaidAmount = netAmount
+	}
+
+	if err := database.DB.Save(&studentBill).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate tagihan"})
+		return
+	}
+
+	// Hitung amount yang ditambahkan (untuk payment record)
+	amountAdded := studentBill.PaidAmount - oldPaidAmount
+	if amountAdded > 0 {
+		// Buat student payment record
+		studentPayment := models.StudentPayment{
+			StudentID:    studentBill.StudentID,
+			AcademicYear: studentBill.AcademicYear,
+			PaymentRef:   paymentRef,
+			Amount:       amountAdded,
+			Bank:         req.Bank,
+			Method:       paymentMethod,
+			Note:         req.Note,
+			Date:         paymentDate,
+		}
+
+		if err := database.DB.Save(&studentPayment).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat record pembayaran"})
+			return
+		}
+
+		// Buat student payment allocation
+		studentPaymentAllocation := models.StudentPaymentAllocation{
+			StudentPaymentID: studentPayment.ID,
+			StudentBillID:    studentBill.ID,
+			Amount:           amountAdded,
+		}
+
+		if err := database.DB.Save(&studentPaymentAllocation).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat alokasi pembayaran"})
+			return
+		}
+	}
+
+	// Reload student bill dengan data terbaru
+	database.DB.Preload("Mahasiswa").First(&studentBill, uint(studentBillID))
+
+	// Hitung status baru
+	netAmount = studentBill.NetAmount()
+	remaining := studentBill.Remaining()
+	status := "unpaid"
+	if remaining <= 0 {
+		status = "paid"
+	} else if studentBill.PaidAmount > 0 {
+		status = "partial"
+	}
+
+	// Response
+	response := gin.H{
+		"message": "Status pembayaran berhasil diupdate",
+		"data": gin.H{
+			"student_bill_id":   studentBill.ID,
+			"student_id":        studentBill.StudentID,
+			"student_name":      "",
+			"academic_year":     studentBill.AcademicYear,
+			"bill_name":         studentBill.Name,
+			"amount":            netAmount,
+			"paid_amount":       studentBill.PaidAmount,
+			"remaining_amount":  remaining,
+			"status":            status,
+			"updated_at":        studentBill.UpdatedAt.Format("2006-01-02 15:04:05"),
+		},
+	}
+
+	if studentBill.Mahasiswa != nil {
+		response["data"].(gin.H)["student_name"] = studentBill.Mahasiswa.Nama
+	}
+
+	c.JSON(http.StatusOK, response)
+}
