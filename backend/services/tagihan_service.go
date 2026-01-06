@@ -323,15 +323,16 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	// JANGAN gunakan bill_template atau bill_template_items, langsung dari detail_tagihan
 	utils.Log.Info("Mencari detail_tagihan dari master_tagihan", map[string]interface{}{
 		"masterTagihanID": mhswMaster.MasterTagihanID,
-		"nominalUKT":      mhswMaster.UKT,
+		"uktValue":        mhswMaster.UKT, // Ini adalah kelompok UKT, bukan nominal
 		"kelompokUKT":     UKT,
+		"mhswID":          mahasiswa.MhswID,
 	})
 
 	var detailTagihans []models.DetailTagihan
 	// Ambil semua detail_tagihan yang sesuai dengan master_tagihan_id dan kel_ukt
-	// Gunakan DISTINCT untuk menghindari duplikasi jika ada beberapa format yang cocok
+	// JANGAN gunakan DISTINCT dengan field list karena bisa menyebabkan field lain tidak ter-populate
+	// Gunakan query biasa dan filter duplikasi di aplikasi jika perlu
 	errDetailList := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKT).
-		Distinct("id, master_tagihan_id, kel_ukt, nama, nominal").
 		Find(&detailTagihans).Error
 
 	if errDetailList != nil {
@@ -356,11 +357,32 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	}
 
 	// Log jumlah detail_tagihan yang ditemukan untuk debugging
+	// Log detail setiap record untuk memastikan Nominal ter-populate
+	var detailTagihansLog []map[string]interface{}
+	for i, dt := range detailTagihans {
+		detailTagihansLog = append(detailTagihansLog, map[string]interface{}{
+			"Index":           i,
+			"ID":              dt.ID,
+			"MasterTagihanID": dt.MasterTagihanID,
+			"KelUKT":          dt.KelUKT,
+			"Nama":            dt.Nama,
+			"Nominal":         dt.Nominal,
+		})
+		// Log individual untuk memastikan Nominal ter-populate
+		utils.Log.Info(fmt.Sprintf("Detail tagihan [%d] setelah query", i), map[string]interface{}{
+			"ID":              dt.ID,
+			"MasterTagihanID": dt.MasterTagihanID,
+			"KelUKT":          dt.KelUKT,
+			"Nama":            dt.Nama,
+			"Nominal":         dt.Nominal,
+		})
+	}
 	utils.Log.Info("Detail tagihan ditemukan", map[string]interface{}{
 		"count":           len(detailTagihans),
 		"masterTagihanID": mhswMaster.MasterTagihanID,
 		"kelompokUKT":     UKT,
-		"detailTagihans":  detailTagihans,
+		"mhswID":          mahasiswa.MhswID,
+		"detailTagihans":  detailTagihansLog,
 	})
 
 	// Jika ada lebih dari 1 record, ambil hanya yang pertama (atau filter berdasarkan nama tertentu)

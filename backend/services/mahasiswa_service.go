@@ -334,11 +334,20 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 		if errDetail == nil {
 			nominalUKT = detailTagihan.Nominal
 			utils.Log.Info("Nominal UKT ditemukan dari detail_tagihan", map[string]interface{}{
-				"mhswID":          mhswMaster.StudentID,
-				"masterTagihanID": mhswMaster.MasterTagihanID,
-				"uktValue":        mhswMaster.UKT,
-				"kelompokUKT":     detailTagihan.KelUKT,
-				"nominalUKT":      nominalUKT,
+				"mhswID":            mhswMaster.StudentID,
+				"masterTagihanID":   mhswMaster.MasterTagihanID,
+				"uktValue":          mhswMaster.UKT,
+				"kelompokUKT":       detailTagihan.KelUKT,
+				"nominalUKT":        nominalUKT,
+				"detailTagihanID":   detailTagihan.ID,
+				"detailTagihanNama": detailTagihan.Nama,
+				"detailTagihanFull": map[string]interface{}{
+					"ID":              detailTagihan.ID,
+					"MasterTagihanID": detailTagihan.MasterTagihanID,
+					"KelUKT":          detailTagihan.KelUKT,
+					"Nama":            detailTagihan.Nama,
+					"Nominal":         detailTagihan.Nominal,
+				},
 			})
 		} else {
 			// Fallback: cari berdasarkan master_tagihan_id saja (ambil yang pertama)

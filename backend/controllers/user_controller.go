@@ -343,7 +343,7 @@ func Me(c *gin.Context) {
 		parsedData = make(map[string]interface{})
 	}
 
-	// Log fullDataMap untuk NPM 227007054 dan 253401111128 untuk debugging
+	// Log fullDataMap untuk debugging - tambahkan NPM yang bermasalah
 	if mahasiswa.MhswID == "227007054" || mahasiswa.MhswID == "253401111128" {
 		utils.Log.Info(fmt.Sprintf("=== ANALISIS fullDataMap di endpoint /me untuk NPM %s ===", mahasiswa.MhswID), map[string]interface{}{
 			"fullDataRaw":    mahasiswa.FullData,
@@ -380,48 +380,124 @@ func Me(c *gin.Context) {
 	// Pastikan UKT dan UKTNominal selalu benar dari FullData yang sudah di-sync
 	parsedData["TahunMasuk"] = mhswMaster.TahunMasuk
 	parsedData["angkatan"] = strconv.Itoa(mhswMaster.TahunMasuk) // Frontend menggunakan 'angkatan' sebagai string
-	parsedData["UKT"] = int(mhswMaster.UKT)                      // Pastikan UKT selalu dari mahasiswa_masters
+
+	// Pastikan UKT tidak 0 - ambil langsung dari mahasiswa_masters
+	if mhswMaster.UKT == 0 {
+		utils.Log.Warn("Endpoint /me: UKT dari mahasiswa_masters adalah 0", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"UKT":    mhswMaster.UKT,
+		})
+	}
+	parsedData["UKT"] = int(mhswMaster.UKT) // Pastikan UKT selalu dari mahasiswa_masters
 	parsedData["master_tagihan_id"] = mhswMaster.MasterTagihanID
 
-	// Pastikan UKTNominal selalu benar (ambil dari FullData yang sudah di-parse, atau dari detail_tagihan)
-	// FullData sudah di-update di CreateFromMasterMahasiswa dengan UKTNominal yang benar
-	// Tapi jika tidak ada, ambil langsung dari detail_tagihan
-	if uktNominal, exists := parsedData["UKTNominal"]; !exists || uktNominal == nil || uktNominal == float64(0) || uktNominal == int64(0) {
-		// Ambil UKTNominal dari detail_tagihan jika belum ada atau nil atau 0
-		if mhswMaster.MasterTagihanID > 0 {
-			var detailTagihan models.DetailTagihan
-			UKTStr := strconv.Itoa(int(mhswMaster.UKT))
-			errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKTStr).
+	// SELALU ambil UKTNominal langsung dari detail_tagihan untuk memastikan data terbaru
+	// Jangan bergantung pada FullData yang mungkin belum ter-update
+	nominalUKTFromDetail := int64(0)
+
+	// Validasi: UKT dan MasterTagihanID harus > 0
+	if mhswMaster.MasterTagihanID == 0 {
+		utils.Log.Warn("Endpoint /me: MasterTagihanID adalah 0, tidak bisa mengambil UKTNominal", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"UKT":    mhswMaster.UKT,
+		})
+	} else if mhswMaster.UKT == 0 {
+		utils.Log.Warn("Endpoint /me: UKT adalah 0, tidak bisa mengambil UKTNominal", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"masterTagihanID": mhswMaster.MasterTagihanID,
+		})
+	} else {
+		// UKT dan MasterTagihanID valid, ambil dari detail_tagihan
+		var detailTagihan models.DetailTagihan
+		UKTStr := strconv.Itoa(int(mhswMaster.UKT))
+
+		// Coba query dengan format int sebagai string
+		errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKTStr).
+			First(&detailTagihan).Error
+
+		if errDetail == nil {
+			nominalUKTFromDetail = detailTagihan.Nominal
+			utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan", map[string]interface{}{
+				"mhswID":          mahasiswa.MhswID,
+				"UKTNominal":      detailTagihan.Nominal,
+				"kelompokUKT":     UKTStr,
+				"masterTagihanID": mhswMaster.MasterTagihanID,
+			})
+		} else {
+			// Fallback: coba format float dengan 2 desimal
+			UKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
+			errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKTFloat).
 				First(&detailTagihan).Error
 			if errDetail == nil {
-				parsedData["UKTNominal"] = detailTagihan.Nominal
-				utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan", map[string]interface{}{
-					"mhswID":      mahasiswa.MhswID,
-					"UKTNominal":  detailTagihan.Nominal,
-					"kelompokUKT": UKTStr,
+				nominalUKTFromDetail = detailTagihan.Nominal
+				utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan (format float)", map[string]interface{}{
+					"mhswID":          mahasiswa.MhswID,
+					"UKTNominal":      detailTagihan.Nominal,
+					"kelompokUKT":     UKTFloat,
+					"masterTagihanID": mhswMaster.MasterTagihanID,
 				})
 			} else {
-				// Fallback: coba format lain
-				UKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
-				errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKTFloat).
+				// Fallback: coba tanpa desimal
+				UKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
+				errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKTNoDecimal).
 					First(&detailTagihan).Error
 				if errDetail == nil {
-					parsedData["UKTNominal"] = detailTagihan.Nominal
-					utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan (format float)", map[string]interface{}{
-						"mhswID":      mahasiswa.MhswID,
-						"UKTNominal":  detailTagihan.Nominal,
-						"kelompokUKT": UKTFloat,
+					nominalUKTFromDetail = detailTagihan.Nominal
+					utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan (format no decimal)", map[string]interface{}{
+						"mhswID":          mahasiswa.MhswID,
+						"UKTNominal":      detailTagihan.Nominal,
+						"kelompokUKT":     UKTNoDecimal,
+						"masterTagihanID": mhswMaster.MasterTagihanID,
 					})
 				} else {
-					utils.Log.Warn("Endpoint /me: UKTNominal tidak ditemukan di detail_tagihan", map[string]interface{}{
+					// Log semua format yang sudah dicoba
+					utils.Log.Error("Endpoint /me: UKTNominal tidak ditemukan di detail_tagihan dengan semua format", map[string]interface{}{
 						"mhswID":          mahasiswa.MhswID,
 						"masterTagihanID": mhswMaster.MasterTagihanID,
 						"UKT":             mhswMaster.UKT,
+						"UKTStr":          UKTStr,
+						"UKTFloat":        UKTFloat,
+						"UKTNoDecimal":    UKTNoDecimal,
+						"error":           errDetail.Error(),
 					})
+
+					// Jika tidak ditemukan, gunakan dari parsedData jika ada dan valid
+					if uktNominal, exists := parsedData["UKTNominal"]; exists && uktNominal != nil {
+						if val, ok := uktNominal.(float64); ok && val > 0 {
+							nominalUKTFromDetail = int64(val)
+							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (float64)", map[string]interface{}{
+								"mhswID":     mahasiswa.MhswID,
+								"UKTNominal": nominalUKTFromDetail,
+							})
+						} else if val, ok := uktNominal.(int64); ok && val > 0 {
+							nominalUKTFromDetail = val
+							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (int64)", map[string]interface{}{
+								"mhswID":     mahasiswa.MhswID,
+								"UKTNominal": nominalUKTFromDetail,
+							})
+						} else if val, ok := uktNominal.(int); ok && val > 0 {
+							nominalUKTFromDetail = int64(val)
+							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (int)", map[string]interface{}{
+								"mhswID":     mahasiswa.MhswID,
+								"UKTNominal": nominalUKTFromDetail,
+							})
+						}
+					}
 				}
 			}
 		}
 	}
+
+	// SELALU update parsedData dengan UKTNominal yang benar
+	parsedData["UKTNominal"] = nominalUKTFromDetail
+
+	// Log untuk debugging
+	utils.Log.Info("Endpoint /me: Final parsedData UKT dan UKTNominal", map[string]interface{}{
+		"mhswID":     mahasiswa.MhswID,
+		"UKT":        parsedData["UKT"],
+		"UKTNominal": parsedData["UKTNominal"],
+		"mhswUKT":    mhswMaster.UKT,
+	})
 
 	// Buat response mahasiswa dari mahasiswa_masters
 	mahasiswaResponse := gin.H{
