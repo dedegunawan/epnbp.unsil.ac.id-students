@@ -152,12 +152,18 @@ export const AuthTokenProvider = ({
             const rawProfile = res.data;
 
             try {
-                if (rawProfile?.mahasiswa?.full_data) {
+                // Jika backend sudah mengirim parsed, gunakan yang dari backend
+                // Jangan parse ulang full_data karena bisa menimpa parsed yang sudah benar
+                if (!rawProfile?.mahasiswa?.parsed && rawProfile?.mahasiswa?.full_data) {
                     rawProfile.mahasiswa.parsed = JSON.parse(rawProfile.mahasiswa.full_data);
                 }
+                // Jika parsed sudah ada dari backend, pastikan UKT dan UKTNominal tetap benar
+                // Jangan timpa dengan hasil parsing full_data
             } catch (err) {
                 console.warn("Gagal parse full_data:", err);
-                rawProfile.mahasiswa.parsed = {};
+                if (!rawProfile?.mahasiswa?.parsed) {
+                    rawProfile.mahasiswa.parsed = {};
+                }
             }
 
             setProfile(rawProfile);

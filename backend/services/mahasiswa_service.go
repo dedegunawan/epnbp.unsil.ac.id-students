@@ -378,6 +378,41 @@ func (s *mahasiswaService) CreateFromMasterMahasiswa(mhswID string) error {
 	// Update FullData dengan nominal UKT
 	fullDataMap["UKT"] = int(mhswMaster.UKT) // Simpan kelompok UKT sebagai int (bukan float)
 	fullDataMap["UKTNominal"] = nominalUKT   // Simpan nominal UKT dari detail_tagihan
+
+	// Log fullDataMap untuk NPM 227007054 untuk debugging
+	if mhswMaster.StudentID == "227007054" {
+		utils.Log.Info("=== ANALISIS fullDataMap untuk NPM 227007054 ===", map[string]interface{}{
+			"fullDataMap": fullDataMap,
+			"mhswMaster": map[string]interface{}{
+				"ID":               mhswMaster.ID,
+				"StudentID":        mhswMaster.StudentID,
+				"NamaLengkap":      mhswMaster.NamaLengkap,
+				"ProdiID":          mhswMaster.ProdiID,
+				"ProgramID":        mhswMaster.ProgramID,
+				"TahunMasuk":       mhswMaster.TahunMasuk,
+				"SemesterMasukID":  mhswMaster.SemesterMasukID,
+				"StatusAkademikID": mhswMaster.StatusAkademikID,
+				"UKT":              mhswMaster.UKT,
+				"MasterTagihanID":  mhswMaster.MasterTagihanID,
+			},
+			"prodiData": map[string]interface{}{
+				"ID":         prodiData.ID,
+				"KodeProdi":  prodiData.KodeProdi,
+				"NamaProdi":  prodiData.NamaProdi,
+				"FakultasID": prodiData.FakultasID,
+			},
+			"fakultasData": map[string]interface{}{
+				"ID":           fakultasData.ID,
+				"KodeFakultas": fakultasData.KodeFakultas,
+				"NamaFakultas": fakultasData.NamaFakultas,
+			},
+			"statusMhswID":  statusMhswID,
+			"semesterMasuk": semesterMasuk,
+			"nominalUKT":    nominalUKT,
+			"kelompokUKT":   kelompokUKT,
+		})
+	}
+
 	jsonBytes, err := json.Marshal(fullDataMap)
 	if err != nil {
 		return fmt.Errorf("Gagal encode JSON mahasiswa: %w", err)
