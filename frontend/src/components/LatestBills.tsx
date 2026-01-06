@@ -8,6 +8,7 @@ import axios from "axios";
 import {useAuthToken} from "@/auth/auth-token-context.tsx";
 import { ConfirmPayment } from '@/components/ConfirmPayment.tsx'
 import api from "@/lib/axios.ts";
+import {useToast} from "@/hooks/use-toast.ts";
 
 export interface StudentBill {
   ID: number;
@@ -81,6 +82,8 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
 
   const { refresh } = useStudentBills()
 
+  const { toast } = useToast();
+
   const showConfirmPay = useCallback(async (studentBill) => {
     setIsOpen(true);
     setCurrentBill(studentBill);
@@ -89,6 +92,23 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
   const onCloseModal =   () => {
     setIsOpen(false);
     refresh();
+  };
+
+  const scrollToPerbaikiTagihan = () => {
+    // Cari elemen dengan tombol "Perbaiki Tagihan"
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const perbaikiButton = buttons.find(
+      btn => btn.textContent?.includes('Perbaiki Tagihan')
+    );
+    
+    if (perbaikiButton) {
+      perbaikiButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Highlight button dengan animasi
+      perbaikiButton.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+      setTimeout(() => {
+        perbaikiButton.classList.remove('ring-2', 'ring-primary', 'ring-offset-2');
+      }, 3000);
+    }
   };
 
   const getUrlPembayaran = useCallback(async (studentBillID) => {
@@ -109,13 +129,42 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
         window.location.href = url; // Ini redirect ke halaman pembayaran
       } else {
         console.error("URL pembayaran tidak ditemukan dalam respons.");
+        toast({
+          title: "Error",
+          description: "URL pembayaran tidak ditemukan dalam respons.",
+          variant: "destructive",
+        });
       }
 
     } catch (err: any) {
       console.error("Gagal memuat URL pembayaran:", err);
+      
+      // Cek apakah error adalah BILL_AMOUNT_MISMATCH
+      const errorCode = err?.response?.data?.code;
+      const errorMessage = err?.response?.data?.message || err?.response?.data?.error || "Gagal memuat URL pembayaran";
+      
+      if (errorCode === "BILL_AMOUNT_MISMATCH" || errorMessage.includes("Perbaiki Tagihan")) {
+        toast({
+          title: "Nominal Tagihan Tidak Sesuai",
+          description: "Nominal tagihan tidak sesuai. Silakan klik tombol 'Perbaiki Tagihan' di bagian atas halaman untuk memperbarui tagihan.",
+          variant: "destructive",
+          duration: 5000,
+        });
+        
+        // Scroll ke tombol "Perbaiki Tagihan" setelah 500ms
+        setTimeout(() => {
+          scrollToPerbaikiTagihan();
+        }, 500);
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     }
 
-  }, [token]);
+  }, [token, toast]);
 
 
   if (tagihanHarusDibayar.length === 0) {

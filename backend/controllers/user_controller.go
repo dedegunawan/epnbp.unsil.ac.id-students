@@ -216,7 +216,7 @@ func Me(c *gin.Context) {
 	// Sync dari mahasiswa_masters (selalu update, tidak peduli sudah ada atau belum)
 	errSync := mahasiswaService.CreateFromMasterMahasiswa(mahasiswa.MhswID)
 	if errSync == nil {
-		// Reload mahasiswa dengan relasi setelah sync
+		// Reload mahasiswa dengan relasi setelah sync (hanya sekali)
 		mahasiswa, _ = mahasiswaRepo.FindByMhswID(mahasiswa.MhswID)
 		utils.Log.Info("Endpoint /me: Data mahasiswa berhasil di-sync dari mahasiswa_masters", map[string]interface{}{
 			"mhswID":  mahasiswa.MhswID,
@@ -271,8 +271,9 @@ func Me(c *gin.Context) {
 					// Update mahasiswa dengan ProdiID yang benar
 					database.DB.Model(mahasiswa).Update("prodi_id", prodi.ID)
 
-					// Reload mahasiswa dengan relasi
-					mahasiswa, _ = mahasiswaRepo.FindByMhswID(mahasiswa.MhswID)
+					// Reload mahasiswa dengan relasi (hanya jika benar-benar diperlukan)
+					// Gunakan Preload untuk memastikan relasi ter-load tanpa query tambahan
+					database.DB.Preload("Prodi.Fakultas").First(mahasiswa, mahasiswa.ID)
 
 					utils.Log.Info("Endpoint /me: Prodi dan Fakultas berhasil di-sync dari database PNBP", map[string]interface{}{
 						"mhswID":    mahasiswa.MhswID,
@@ -286,20 +287,34 @@ func Me(c *gin.Context) {
 
 	// Ambil data langsung dari mahasiswa_masters di database PNBP, bukan dari tabel mahasiswa
 	var mhswMaster models.MahasiswaMaster
-	errMaster := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
-	if errMaster != nil {
-		utils.Log.Error("Endpoint /me: Gagal mengambil data dari mahasiswa_masters", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
-			"error":  errMaster.Error(),
-		})
-		// Fallback ke data dari tabel mahasiswa jika tidak ditemukan
+	if mahasiswa != nil {
+		errMaster := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
+		if errMaster != nil {
+			utils.Log.Error("Endpoint /me: Gagal mengambil data dari mahasiswa_masters", map[string]interface{}{
+				"mhswID": mahasiswa.MhswID,
+				"error":  errMaster.Error(),
+			})
+			// Fallback ke data dari tabel mahasiswa jika tidak ditemukan
+			c.JSON(200, gin.H{
+				"id":        user.ID,
+				"name":      user.Name,
+				"email":     user.Email,
+				"sso_id":    c.GetString("sso_id"),
+				"is_active": user.IsActive,
+				"mahasiswa": mahasiswa,
+				"semester":  0,
+			})
+			return
+		}
+	} else {
+		// Jika mahasiswa nil, return early
 		c.JSON(200, gin.H{
 			"id":        user.ID,
 			"name":      user.Name,
 			"email":     user.Email,
 			"sso_id":    c.GetString("sso_id"),
 			"is_active": user.IsActive,
-			"mahasiswa": mahasiswa,
+			"mahasiswa": nil,
 			"semester":  0,
 		})
 		return
@@ -1172,6 +1187,23 @@ func GenerateUrlPembayaran(c *gin.Context) {
 	if err != nil {
 		utils.Log.Info("Gagal membuat tagihan", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat URL Pembayaran"})
+		return
+	}
+
+	// Validasi nominal tagihan sebelum generate payment URL
+	masterTagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanRepo)
+	err = tagihanService.ValidateBillAmount(studentBill, mahasiswa)
+	if err != nil {
+		utils.Log.Warn("Validasi nominal tagihan gagal", map[string]interface{}{
+			"studentBillID": studentBillID,
+			"error":         err.Error(),
+		})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"code":    "BILL_AMOUNT_MISMATCH",
+			"message": "Nominal tagihan tidak sesuai. Silakan klik 'Perbaiki Tagihan' untuk memperbarui tagihan.",
+		})
 		return
 	}
 

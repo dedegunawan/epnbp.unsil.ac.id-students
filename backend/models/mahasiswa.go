@@ -24,7 +24,7 @@ type Prodi struct {
 // Mahasiswa model
 type Mahasiswa struct {
 	ID       uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	MhswID   string `gorm:"type:varchar(50);not null" json:"mhsw_id"`
+	MhswID   string `gorm:"column:mhsw_id;type:varchar(50);not null" json:"mhsw_id"`
 	Nama     string `gorm:"type:varchar(100);not null" json:"nama"`
 	ProdiID  uint   `gorm:"not null" json:"prodi_id"`
 	UKT      string `gorm:"column:kel_ukt" json:"kel_ukt"`

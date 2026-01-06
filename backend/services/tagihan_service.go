@@ -25,6 +25,7 @@ type TagihanService interface {
 	CekDepositMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) bool
 	IsNominalDibayarLebihKecilSeharusnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) (bool, int64, int64)
 	CreateNewTagihanSekurangnya(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear, tagihanKurang int64) error
+	ValidateBillAmount(studentBill *models.StudentBill, mahasiswa *models.Mahasiswa) error
 }
 
 type tagihanService struct {
@@ -258,12 +259,16 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	// Coba beberapa format untuk mencocokkan dengan kel_ukt di database
 	// Format 1: int sebagai string ("2")
 	kelompokUKTInt := strconv.Itoa(int(mhswMaster.UKT))
+	kelompokUKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
+	kelompokUKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
+
+	triedFormats := []string{kelompokUKTInt, kelompokUKTFloat, kelompokUKTNoDecimal}
+
 	errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTInt).
 		First(&detailTagihan).Error
 
 	if errDetail != nil {
 		// Format 2: float dengan 2 desimal ("2.00")
-		kelompokUKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
 		errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTFloat).
 			First(&detailTagihan).Error
 		if errDetail == nil {
@@ -275,7 +280,6 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 
 	if errDetail != nil {
 		// Format 3: tanpa desimal ("2")
-		kelompokUKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
 		errDetail = database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, kelompokUKTNoDecimal).
 			First(&detailTagihan).Error
 		if errDetail == nil {
@@ -284,38 +288,25 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	}
 
 	if errDetail != nil {
-		// Fallback: cari berdasarkan master_tagihan_id saja (ambil yang pertama)
-		utils.Log.Warn("Detail tagihan tidak ditemukan dengan kel_ukt, mencoba fallback", map[string]interface{}{
+		// JANGAN fallback ke semua master_tagihan_id karena akan mengambil yang pertama (bisa salah)
+		// Gunakan nilai dari mahasiswa_masters sebagai string
+		UKT = strconv.Itoa(int(mhswMaster.UKT))
+		utils.Log.Warn("Kelompok UKT tidak ditemukan dengan format apapun, menggunakan nilai dari mahasiswa_masters", map[string]interface{}{
 			"mhswID":          mahasiswa.MhswID,
+			"UKT":             UKT,
 			"uktValue":        mhswMaster.UKT,
 			"masterTagihanID": mhswMaster.MasterTagihanID,
-			"error":           errDetail,
+			"error":           errDetail.Error(),
+			"triedFormats":    triedFormats,
 		})
-		errFallback := database.DBPNBP.Where("master_tagihan_id = ?", mhswMaster.MasterTagihanID).
-			First(&detailTagihan).Error
-		if errFallback == nil && detailTagihan.KelUKT != nil {
-			UKT = *detailTagihan.KelUKT
-			utils.Log.Warn("Kelompok UKT diambil dari detail_tagihan fallback (tidak match kelompok)", map[string]interface{}{
-				"mhswID":          mahasiswa.MhswID,
-				"kelompokUKT":     UKT,
-				"uktValue":        mhswMaster.UKT,
-				"masterTagihanID": mhswMaster.MasterTagihanID,
-			})
-		} else {
-			// Fallback terakhir: gunakan nilai dari mahasiswa_masters sebagai string
-			UKT = strconv.Itoa(int(mhswMaster.UKT))
-			utils.Log.Warn("Kelompok UKT tidak ditemukan, menggunakan nilai dari mahasiswa_masters", map[string]interface{}{
-				"mhswID":   mahasiswa.MhswID,
-				"UKT":      UKT,
-				"uktValue": mhswMaster.UKT,
-			})
-		}
 	} else {
 		utils.Log.Info("Kelompok UKT ditemukan dari detail_tagihan", map[string]interface{}{
-			"mhswID":          mahasiswa.MhswID,
-			"kelompokUKT":     UKT,
-			"uktValue":        mhswMaster.UKT,
-			"masterTagihanID": mhswMaster.MasterTagihanID,
+			"mhswID":               mahasiswa.MhswID,
+			"kelompokUKT":          UKT,
+			"uktValue":             mhswMaster.UKT,
+			"masterTagihanID":      mhswMaster.MasterTagihanID,
+			"detailTagihanID":      detailTagihan.ID,
+			"detailTagihanNominal": detailTagihan.Nominal,
 		})
 	}
 
@@ -332,8 +323,19 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	// Ambil semua detail_tagihan yang sesuai dengan master_tagihan_id dan kel_ukt
 	// JANGAN gunakan DISTINCT dengan field list karena bisa menyebabkan field lain tidak ter-populate
 	// Gunakan query biasa dan filter duplikasi di aplikasi jika perlu
+	// Pastikan query menggunakan UKT yang sudah ditemukan (bukan dari mahasiswa_masters langsung)
 	errDetailList := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?", mhswMaster.MasterTagihanID, UKT).
 		Find(&detailTagihans).Error
+
+	// Log query yang digunakan - PASTIKAN UKT sudah benar
+	utils.Log.Info("Query detail_tagihan untuk generate bill", map[string]interface{}{
+		"masterTagihanID": mhswMaster.MasterTagihanID,
+		"kelompokUKT":     UKT,
+		"uktValue":        mhswMaster.UKT,
+		"mhswID":          mahasiswa.MhswID,
+		"query":           fmt.Sprintf("master_tagihan_id = %d AND kel_ukt = '%s'", mhswMaster.MasterTagihanID, UKT),
+		"note":            "UKT ini harus match dengan kel_ukt di database untuk mendapatkan nominal yang benar",
+	})
 
 	if errDetailList != nil {
 		utils.Log.Error("Gagal query detail_tagihan", map[string]interface{}{
@@ -393,24 +395,53 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 			"masterTagihanID": mhswMaster.MasterTagihanID,
 			"kelompokUKT":     UKT,
 		})
-		// Filter untuk mengambil hanya record dengan nama "UKT" atau yang nominalnya sesuai
-		// Atau ambil yang pertama saja
+		// Filter untuk mengambil hanya record dengan nama "UKT" atau "Uang Kuliah"
+		// Prioritas: 1. Nama mengandung "UKT", 2. Nama mengandung "UANG KULIAH", 3. Yang pertama
 		var filteredDetailTagihans []models.DetailTagihan
+		var uktOnlyDetailTagihans []models.DetailTagihan
+
 		for _, dt := range detailTagihans {
-			// Jika nama mengandung "UKT" atau "Uang Kuliah", gunakan itu
-			if strings.Contains(strings.ToUpper(dt.Nama), "UKT") || strings.Contains(strings.ToUpper(dt.Nama), "UANG KULIAH") {
+			// Prioritas 1: Nama mengandung "UKT"
+			if strings.Contains(strings.ToUpper(dt.Nama), "UKT") {
+				uktOnlyDetailTagihans = append(uktOnlyDetailTagihans, dt)
+			}
+			// Prioritas 2: Nama mengandung "Uang Kuliah"
+			if strings.Contains(strings.ToUpper(dt.Nama), "UANG KULIAH") {
 				filteredDetailTagihans = append(filteredDetailTagihans, dt)
 			}
 		}
-		// Jika tidak ada yang match dengan filter, ambil yang pertama saja
-		if len(filteredDetailTagihans) == 0 {
-			detailTagihans = detailTagihans[:1] // Ambil hanya yang pertama
-		} else {
+
+		// Gunakan yang mengandung "UKT" jika ada, jika tidak gunakan "UANG KULIAH", jika tidak gunakan yang pertama
+		if len(uktOnlyDetailTagihans) > 0 {
+			detailTagihans = uktOnlyDetailTagihans
+			utils.Log.Info("Detail tagihan setelah filter (prioritas UKT)", map[string]interface{}{
+				"count":    len(detailTagihans),
+				"selected": detailTagihans[0].Nama,
+				"nominal":  detailTagihans[0].Nominal,
+			})
+		} else if len(filteredDetailTagihans) > 0 {
 			detailTagihans = filteredDetailTagihans
+			utils.Log.Info("Detail tagihan setelah filter (prioritas UANG KULIAH)", map[string]interface{}{
+				"count":    len(detailTagihans),
+				"selected": detailTagihans[0].Nama,
+				"nominal":  detailTagihans[0].Nominal,
+			})
+		} else {
+			// Ambil yang pertama, tapi log warning
+			utils.Log.Warn("Tidak ada detail_tagihan dengan nama UKT atau UANG KULIAH, menggunakan yang pertama", map[string]interface{}{
+				"count":    len(detailTagihans),
+				"selected": detailTagihans[0].Nama,
+				"nominal":  detailTagihans[0].Nominal,
+				"allNames": func() []string {
+					names := make([]string, len(detailTagihans))
+					for i, dt := range detailTagihans {
+						names[i] = dt.Nama
+					}
+					return names
+				}(),
+			})
+			detailTagihans = detailTagihans[:1] // Ambil hanya yang pertama
 		}
-		utils.Log.Info("Detail tagihan setelah filter", map[string]interface{}{
-			"count": len(detailTagihans),
-		})
 	}
 
 	nominalBeasiswa := r.GetNominalBeasiswa(string(mahasiswa.MhswID), financeYear.AcademicYear)
@@ -418,26 +449,121 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 
 	sisaBeasiswa := nominalBeasiswa
 	// Generate StudentBill langsung dari detail_tagihan
-	// Cek dulu apakah sudah ada StudentBill dengan nama yang sama untuk tahun akademik ini
+	// Cek dulu apakah sudah ada StudentBill dengan name yang sama untuk tahun akademik ini
 	for _, dt := range detailTagihans {
-		// Cek apakah sudah ada StudentBill dengan nama yang sama untuk tahun akademik ini
+		// Cek apakah sudah ada StudentBill dengan student_id, academic_year, dan name yang sama
 		var existingBill models.StudentBill
 		errCheck := r.repo.DB.Where("student_id = ? AND academic_year = ? AND name = ?",
 			mahasiswa.MhswID, financeYear.AcademicYear, dt.Nama).
 			First(&existingBill).Error
 
 		if errCheck == nil {
-			// Sudah ada, skip
-			utils.Log.Info("StudentBill sudah ada, skip", map[string]interface{}{
-				"mhswID":       mahasiswa.MhswID,
-				"academicYear": financeYear.AcademicYear,
-				"name":         dt.Nama,
-				"billID":       existingBill.ID,
-			})
+			// Sudah ada, cek apakah nominalnya sesuai dengan detail_tagihan
+			// Amount seharusnya = detail_tagihan.Nominal - beasiswa yang sudah ada
+			nominalTagihanSeharusnya := dt.Nominal
+			if existingBill.Beasiswa > 0 {
+				if existingBill.Beasiswa >= dt.Nominal {
+					nominalTagihanSeharusnya = 0
+				} else {
+					nominalTagihanSeharusnya = dt.Nominal - existingBill.Beasiswa
+				}
+			}
+
+			// Cek apakah Amount berbeda dengan yang seharusnya
+			if existingBill.Amount != nominalTagihanSeharusnya {
+				utils.Log.Warn("StudentBill sudah ada tapi Amount tidak sesuai, akan di-update", map[string]interface{}{
+					"mhswID":               mahasiswa.MhswID,
+					"academicYear":         financeYear.AcademicYear,
+					"name":                 dt.Nama,
+					"billID":               existingBill.ID,
+					"amountLama":           existingBill.Amount,
+					"amountBaru":           nominalTagihanSeharusnya,
+					"detailTagihanNominal": dt.Nominal,
+					"beasiswa":             existingBill.Beasiswa,
+					"paidAmount":           existingBill.PaidAmount,
+				})
+
+				// Update Amount dengan nilai yang benar dari detail_tagihan
+				updateData := map[string]interface{}{
+					"amount": nominalTagihanSeharusnya,
+				}
+
+				// Jika PaidAmount lebih besar dari Amount baru, set PaidAmount = Amount baru
+				// Ini untuk mencegah PaidAmount > Amount
+				if existingBill.PaidAmount > nominalTagihanSeharusnya {
+					updateData["paid_amount"] = nominalTagihanSeharusnya
+					utils.Log.Warn("PaidAmount lebih besar dari Amount baru, akan disesuaikan", map[string]interface{}{
+						"mhswID":         mahasiswa.MhswID,
+						"billID":         existingBill.ID,
+						"paidAmountLama": existingBill.PaidAmount,
+						"paidAmountBaru": nominalTagihanSeharusnya,
+					})
+				}
+
+				errUpdate := r.repo.DB.Model(&existingBill).Updates(updateData).Error
+				if errUpdate != nil {
+					utils.Log.Error("Gagal update StudentBill", map[string]interface{}{
+						"mhswID": mahasiswa.MhswID,
+						"billID": existingBill.ID,
+						"error":  errUpdate.Error(),
+					})
+				} else {
+					utils.Log.Info("StudentBill berhasil di-update dengan nominal yang benar", map[string]interface{}{
+						"mhswID":       mahasiswa.MhswID,
+						"academicYear": financeYear.AcademicYear,
+						"name":         dt.Nama,
+						"billID":       existingBill.ID,
+						"amountLama":   existingBill.Amount,
+						"amountBaru":   nominalTagihanSeharusnya,
+					})
+				}
+			} else {
+				utils.Log.Info("StudentBill sudah ada dan nominal sudah sesuai, skip", map[string]interface{}{
+					"mhswID":       mahasiswa.MhswID,
+					"academicYear": financeYear.AcademicYear,
+					"name":         dt.Nama,
+					"billID":       existingBill.ID,
+					"amount":       existingBill.Amount,
+					"beasiswa":     existingBill.Beasiswa,
+				})
+			}
 			continue
 		}
 		nominalBeasiswaSaatIni := int64(0)
 		nominalTagihan := dt.Nominal
+
+		// VALIDASI: Pastikan kelUKT match dengan UKT yang dicari
+		// Jika tidak match, skip detail_tagihan ini (tidak digunakan untuk generate bill)
+		kelUKTStr := ""
+		if dt.KelUKT != nil {
+			kelUKTStr = *dt.KelUKT
+		}
+		isMatch := kelUKTStr == UKT
+
+		if !isMatch {
+			utils.Log.Warn("SKIP: kelUKT tidak match dengan yang dicari, detail_tagihan ini tidak akan digunakan", map[string]interface{}{
+				"mhswID":          mahasiswa.MhswID,
+				"kelUKTSearched":  UKT,
+				"kelUKTFound":     kelUKTStr,
+				"nominal":         dt.Nominal,
+				"detailTagihanID": dt.ID,
+			})
+			continue // Skip detail_tagihan yang tidak match
+		}
+
+		// Log detail tagihan yang akan digunakan untuk generate bill
+		utils.Log.Info("Menggunakan detail_tagihan untuk generate StudentBill", map[string]interface{}{
+			"mhswID":          mahasiswa.MhswID,
+			"detailTagihanID": dt.ID,
+			"nama":            dt.Nama,
+			"kelUKT":          kelUKTStr,
+			"kelUKTSearched":  UKT,
+			"isMatch":         true,
+			"nominal":         dt.Nominal,
+			"masterTagihanID": dt.MasterTagihanID,
+			"academicYear":    financeYear.AcademicYear,
+		})
+
 		if sisaBeasiswa > 0 && sisaBeasiswa >= dt.Nominal {
 			sisaBeasiswa = sisaBeasiswa - dt.Nominal
 			nominalBeasiswaSaatIni = dt.Nominal
@@ -870,6 +996,102 @@ func (r *tagihanService) CreateNewTagihanSekurangnya(mahasiswa *models.Mahasiswa
 	if err := r.repo.DB.Create(&studentBill).Error; err != nil {
 		return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
 	}
+
+	return nil
+}
+
+// ValidateBillAmount memvalidasi apakah nominal tagihan sesuai dengan detail_tagihan
+// Mengembalikan error jika nominal tidak sesuai
+func (r *tagihanService) ValidateBillAmount(studentBill *models.StudentBill, mahasiswa *models.Mahasiswa) error {
+	// Ambil detail_tagihan berdasarkan nama tagihan dan mahasiswa
+	var mhswMaster models.MahasiswaMaster
+	errMhswMaster := database.DBPNBP.Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
+	if errMhswMaster != nil {
+		utils.Log.Warn("ValidateBillAmount: mahasiswa_masters tidak ditemukan", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"error":  errMhswMaster.Error(),
+		})
+		// Jika tidak ditemukan, skip validasi (untuk kompatibilitas)
+		return nil
+	}
+
+	if mhswMaster.MasterTagihanID == 0 {
+		utils.Log.Warn("ValidateBillAmount: MasterTagihanID adalah 0", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+		})
+		return nil
+	}
+
+	// Ambil UKT dari mahasiswa
+	UKT := utils.GetStringFromAny(mahasiswa.UKT)
+	if UKT == "" || UKT == "0" {
+		utils.Log.Warn("ValidateBillAmount: UKT kosong atau 0", map[string]interface{}{
+			"mhswID": mahasiswa.MhswID,
+			"UKT":    UKT,
+		})
+		return nil
+	}
+
+	// Cari detail_tagihan berdasarkan master_tagihan_id, kel_ukt, dan nama tagihan
+	var detailTagihan models.DetailTagihan
+	errDetail := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ? AND nama = ?",
+		mhswMaster.MasterTagihanID, UKT, studentBill.Name).
+		First(&detailTagihan).Error
+
+	if errDetail != nil {
+		// Jika tidak ditemukan dengan nama yang sama, coba cari berdasarkan master_tagihan_id dan kel_ukt saja
+		var detailTagihans []models.DetailTagihan
+		errDetailList := database.DBPNBP.Where("master_tagihan_id = ? AND kel_ukt = ?",
+			mhswMaster.MasterTagihanID, UKT).
+			Find(&detailTagihans).Error
+
+		if errDetailList != nil || len(detailTagihans) == 0 {
+			utils.Log.Warn("ValidateBillAmount: detail_tagihan tidak ditemukan", map[string]interface{}{
+				"mhswID":          mahasiswa.MhswID,
+				"masterTagihanID": mhswMaster.MasterTagihanID,
+				"UKT":             UKT,
+				"billName":        studentBill.Name,
+				"error":           errDetail.Error(),
+			})
+			// Jika tidak ditemukan, skip validasi (untuk kompatibilitas)
+			return nil
+		}
+
+		// Gunakan yang pertama jika ada beberapa
+		detailTagihan = detailTagihans[0]
+	}
+
+	// Hitung nominal tagihan yang seharusnya
+	nominalTagihanSeharusnya := detailTagihan.Nominal
+	if studentBill.Beasiswa > 0 {
+		if studentBill.Beasiswa >= detailTagihan.Nominal {
+			nominalTagihanSeharusnya = 0
+		} else {
+			nominalTagihanSeharusnya = detailTagihan.Nominal - studentBill.Beasiswa
+		}
+	}
+
+	// Validasi: cek apakah Amount sesuai dengan yang seharusnya
+	if studentBill.Amount != nominalTagihanSeharusnya {
+		utils.Log.Warn("ValidateBillAmount: Amount tidak sesuai dengan detail_tagihan", map[string]interface{}{
+			"mhswID":               mahasiswa.MhswID,
+			"billID":               studentBill.ID,
+			"billName":             studentBill.Name,
+			"amountSaatIni":        studentBill.Amount,
+			"amountSeharusnya":     nominalTagihanSeharusnya,
+			"detailTagihanNominal": detailTagihan.Nominal,
+			"beasiswa":             studentBill.Beasiswa,
+		})
+		return fmt.Errorf("nominal tagihan tidak sesuai. Silakan klik 'Perbaiki Tagihan' untuk memperbarui tagihan")
+	}
+
+	utils.Log.Info("ValidateBillAmount: Amount sesuai dengan detail_tagihan", map[string]interface{}{
+		"mhswID":   mahasiswa.MhswID,
+		"billID":   studentBill.ID,
+		"billName": studentBill.Name,
+		"amount":   studentBill.Amount,
+		"beasiswa": studentBill.Beasiswa,
+	})
 
 	return nil
 }
