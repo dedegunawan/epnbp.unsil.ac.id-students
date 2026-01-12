@@ -643,10 +643,38 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 
 	// Generate StudentBill berdasarkan data dari registrasi_mahasiswa
 	for _, reg := range registrasiTagihan {
-		// Tentukan nama tagihan, jika kosong gunakan default
-		namaTagihan := reg.NamaTagihan
-		if namaTagihan == "" {
-			namaTagihan = "Tagihan Registrasi"
+		// Skip jika sudah bayar atau nominal_ukt tidak ada
+		if reg.SudahBayar {
+			utils.Log.Info("CreateNewTagihanPasca: Skip tagihan yang sudah dibayar", map[string]interface{}{
+				"mhswID":     mhswID,
+				"activeYear": activeYear,
+				"id":         reg.ID,
+			})
+			continue
+		}
+
+		if reg.NominalUKT == nil || *reg.NominalUKT == 0 {
+			utils.Log.Warn("CreateNewTagihanPasca: Skip tagihan dengan nominal_ukt kosong atau 0", map[string]interface{}{
+				"mhswID":     mhswID,
+				"activeYear": activeYear,
+				"id":         reg.ID,
+			})
+			continue
+		}
+
+		// Tentukan nama tagihan berdasarkan kel_ukt atau default
+		namaTagihan := "Tagihan Registrasi"
+		if reg.KelUKT != nil && *reg.KelUKT != "" {
+			namaTagihan = fmt.Sprintf("UKT Kelompok %s", *reg.KelUKT)
+		}
+
+		// Konversi nominal_ukt dari float64 ke int64 (rupiah)
+		nominal := int64(*reg.NominalUKT)
+
+		// Set paid_amount jika sudah ada pembayaran
+		paidAmount := int64(0)
+		if reg.NominalBayar != nil {
+			paidAmount = int64(*reg.NominalBayar)
 		}
 
 		// Buat StudentBill dari data registrasi_mahasiswa
@@ -655,8 +683,8 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 			AcademicYear:       activeYear,
 			BillTemplateItemID: 0, // Tidak menggunakan BillTemplateItem untuk pascasarjana dari registrasi_mahasiswa
 			Name:               namaTagihan,
-			Amount:             reg.Nominal,
-			PaidAmount:         0,
+			Amount:             nominal,
+			PaidAmount:         paidAmount,
 			CreatedAt:          time.Now(),
 			UpdatedAt:          time.Now(),
 		}
@@ -674,7 +702,8 @@ func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, fina
 			"mhswID":      mhswID,
 			"activeYear":  activeYear,
 			"namaTagihan": namaTagihan,
-			"nominal":     reg.Nominal,
+			"nominal":     nominal,
+			"paidAmount":  paidAmount,
 		})
 	}
 
