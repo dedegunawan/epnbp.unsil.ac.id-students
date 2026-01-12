@@ -609,112 +609,73 @@ func (r *tagihanService) CreateNewTagihan(mahasiswa *models.Mahasiswa, financeYe
 	return nil
 }
 func (r *tagihanService) CreateNewTagihanPasca(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) error {
-	var template models.BillTemplate
-
-	// Ambil bill_template berdasarkan BIPOTID mahasiswa
-	if err := r.repo.DB.
-		Where("code = ?", mahasiswa.BIPOTID).
-		First(&template).Error; err != nil {
-		return fmt.Errorf("bill template not found for BIPOTID %s: %w", mahasiswa.BIPOTID, err)
-	}
-
-	// Ambil semua item UKT yang cocok
-	var items []models.BillTemplateItem
-	if err := r.repo.DB.
-		Where(`bill_template_id = ?`, template.ID).
-		Find(&items).Error; err != nil {
-		return fmt.Errorf("bill_template_items not found for UKT %s: %w", mahasiswa.UKT, err)
-	}
-
-	if len(items) == 0 {
-		utils.Log.Info("Last query : ", `bill_template_id = ?`, template.ID, mahasiswa.UKT)
-		return fmt.Errorf("tidak ada item tagihan yang cocok untuk UKT %s", mahasiswa.UKT)
-	}
-
 	mhswID := mahasiswa.MhswID
-	// Ambil SemesterMasukID dari mahasiswa_masters di database PNBP
-	// SemesterMasukID adalah referensi ke budget_periods.id, bukan semester masuk (1/2)
-	var mhswMaster models.MahasiswaMaster
-	errMhswMaster := database.DBPNBP.Where("student_id = ?", mhswID).First(&mhswMaster).Error
+	activeYear := financeYear.AcademicYear // Menggunakan AcademicYear sebagai tahun_id
 
-	var tahunIDAwal string
+	utils.Log.Info("CreateNewTagihanPasca: Mengambil data tagihan dari registrasi_mahasiswa", map[string]interface{}{
+		"mhswID":     mhswID,
+		"activeYear": activeYear,
+	})
 
-	if errMhswMaster == nil && mhswMaster.SemesterMasukID > 0 {
-		// SemesterMasukID adalah referensi ke budget_periods.id
-		// Ambil budget_periods.kode sebagai tahunIDAwal
-		var budgetPeriod models.BudgetPeriod
-		errBudgetPeriod := database.DBPNBP.Where("id = ?", mhswMaster.SemesterMasukID).First(&budgetPeriod).Error
-		if errBudgetPeriod == nil && budgetPeriod.Kode != "" {
-			tahunIDAwal = budgetPeriod.Kode
-			utils.Log.Info("CreateNewTagihanPasca: TahunID awal diambil dari budget_periods berdasarkan SemesterMasukID", map[string]interface{}{
-				"mhswID":           mhswID,
-				"SemesterMasukID":  mhswMaster.SemesterMasukID,
-				"budgetPeriodID":   budgetPeriod.ID,
-				"budgetPeriodKode": budgetPeriod.Kode,
-				"tahunIDAwal":      tahunIDAwal,
-			})
-		} else {
-			utils.Log.Warn("CreateNewTagihanPasca: Budget period tidak ditemukan berdasarkan SemesterMasukID, fallback ke TahunMasuk", map[string]interface{}{
-				"mhswID":          mhswID,
-				"SemesterMasukID": mhswMaster.SemesterMasukID,
-				"error":           errBudgetPeriod,
-			})
-			// Fallback: gunakan TahunMasuk dengan default semester 1
-			if mhswMaster.TahunMasuk > 0 {
-				tahunIDAwal = fmt.Sprintf("%d1", mhswMaster.TahunMasuk)
-			} else {
-				return fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswID)
-			}
-		}
-	} else {
-		// Fallback: ambil dari FullData
-		if tahunIDData, ok := mahasiswa.ParseFullData()["TahunID"].(string); ok && tahunIDData != "" {
-			tahunIDAwal = tahunIDData
-			utils.Log.Info("CreateNewTagihanPasca: TahunID awal diambil dari FullData", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
-		} else if tahunMasukData, ok := mahasiswa.ParseFullData()["TahunMasuk"].(float64); ok {
-			// Fallback: buat dari TahunMasuk dengan default semester 1
-			tahunIDAwal = fmt.Sprintf("%.0f1", tahunMasukData)
-			utils.Log.Info("CreateNewTagihanPasca: TahunID awal dibuat dari TahunMasuk di FullData", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
-		} else {
-			// Fallback terakhir: estimasi dari NPM
-			if len(mhswID) >= 2 {
-				tahunMasukStr := "20" + mhswID[0:2] + "1"
-				tahunIDAwal = tahunMasukStr
-				utils.Log.Info("CreateNewTagihanPasca: TahunID awal diestimasi dari NPM", "mhswID", mhswID, "tahunIDAwal", tahunIDAwal)
-			} else {
-				return fmt.Errorf("tahun masuk tidak ditemukan untuk mahasiswa %s", mhswID)
-			}
-		}
+	// Ambil data tagihan dari tabel registrasi_mahasiswa di database PNBP
+	// Filter: tahun_id = activeYear dan npm = MhswID
+	var registrasiTagihan []models.RegistrasiMahasiswa
+	if err := database.DBPNBP.
+		Where("tahun_id = ?", activeYear).
+		Where("npm = ?", mhswID).
+		Find(&registrasiTagihan).Error; err != nil {
+		return fmt.Errorf("gagal mengambil data tagihan dari registrasi_mahasiswa: %w", err)
 	}
 
-	financeCode := financeYear.Code
-	semesterSaatIni, err := r.HitungSemesterSaatIni(tahunIDAwal, financeCode)
-	if err != nil {
-		return err
+	if len(registrasiTagihan) == 0 {
+		utils.Log.Info("CreateNewTagihanPasca: Tidak ada data tagihan ditemukan", map[string]interface{}{
+			"mhswID":     mhswID,
+			"activeYear": activeYear,
+		})
+		return fmt.Errorf("tidak ada data tagihan ditemukan untuk npm %s dengan tahun_id %s", mhswID, activeYear)
 	}
 
-	// Generate StudentBill berdasarkan item
-	for _, item := range items {
-		endSesi := item.MulaiSesi + item.KaliSesi - 1
-		utils.Log.Info(" mulai Sesi, ", item.MulaiSesi, "endSesi: ", endSesi, "semester saat ini ", semesterSaatIni)
-		matchSesi := int64(item.MulaiSesi) <= int64(semesterSaatIni) && int64(semesterSaatIni) <= endSesi
-		broadSesi := item.MulaiSesi > 0 && item.KaliSesi == 0 && int64(item.MulaiSesi) <= int64(semesterSaatIni)
-		if matchSesi || broadSesi {
-			bill := models.StudentBill{
-				StudentID:          string(mahasiswa.MhswID),
-				AcademicYear:       financeYear.AcademicYear,
-				BillTemplateItemID: item.BillTemplateID,
-				Name:               item.AdditionalName,
-				Amount:             item.Amount,
-				PaidAmount:         0,
-				CreatedAt:          time.Now(),
-				UpdatedAt:          time.Now(),
-			}
-			if err := r.repo.DB.Create(&bill).Error; err != nil {
-				return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
-			}
+	utils.Log.Info("CreateNewTagihanPasca: Data tagihan ditemukan", map[string]interface{}{
+		"mhswID":        mhswID,
+		"activeYear":    activeYear,
+		"jumlahTagihan": len(registrasiTagihan),
+	})
+
+	// Generate StudentBill berdasarkan data dari registrasi_mahasiswa
+	for _, reg := range registrasiTagihan {
+		// Tentukan nama tagihan, jika kosong gunakan default
+		namaTagihan := reg.NamaTagihan
+		if namaTagihan == "" {
+			namaTagihan = "Tagihan Registrasi"
 		}
 
+		// Buat StudentBill dari data registrasi_mahasiswa
+		bill := models.StudentBill{
+			StudentID:          mhswID,
+			AcademicYear:       activeYear,
+			BillTemplateItemID: 0, // Tidak menggunakan BillTemplateItem untuk pascasarjana dari registrasi_mahasiswa
+			Name:               namaTagihan,
+			Amount:             reg.Nominal,
+			PaidAmount:         0,
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+
+		if err := r.repo.DB.Create(&bill).Error; err != nil {
+			utils.Log.Error("CreateNewTagihanPasca: Gagal membuat tagihan", map[string]interface{}{
+				"mhswID":     mhswID,
+				"activeYear": activeYear,
+				"error":      err,
+			})
+			return fmt.Errorf("gagal membuat tagihan mahasiswa: %w", err)
+		}
+
+		utils.Log.Info("CreateNewTagihanPasca: Tagihan berhasil dibuat", map[string]interface{}{
+			"mhswID":      mhswID,
+			"activeYear":  activeYear,
+			"namaTagihan": namaTagihan,
+			"nominal":     reg.Nominal,
+		})
 	}
 
 	return nil
