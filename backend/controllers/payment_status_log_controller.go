@@ -59,7 +59,7 @@ func GetAllPaymentStatusLogs(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	// Query builder
-	query := database.DB.Model(&models.PaymentStatusLog{})
+	query := database.DBPNBP.Model(&models.PaymentStatusLog{})
 
 	// Filter by student_id
 	if studentID != "" {

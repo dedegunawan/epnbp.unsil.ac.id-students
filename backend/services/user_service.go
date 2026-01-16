@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 
+	"github.com/dedegunawan/backend-ujian-telp-v5/config"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
@@ -33,6 +34,11 @@ func (s *UserService) GetOrCreateBySSO(ssoID, email, name string) (*models.User,
 }
 
 func (s *UserService) GetOrCreateByEmail(ssoID, email, name string) (*models.User, error) {
+	// Validasi email suffix
+	if email != "" && !config.ValidateEmailSuffix(email) {
+		return nil, errors.New("email harus menggunakan domain " + config.GetEmailSuffix())
+	}
+
 	user, err := s.Repo.FindByEmail(email)
 	if err == nil {
 		// User sudah ada, update sso_id jika belum ada atau berbeda
@@ -65,6 +71,11 @@ func (s *UserService) GetOrCreateByEmail(ssoID, email, name string) (*models.Use
 }
 
 func (s *UserService) CreateUser(Name string, Email string, Password string, RoleIDs []string) (*models.User, error) {
+	// Validasi email suffix
+	if !config.ValidateEmailSuffix(Email) {
+		return nil, errors.New("email harus menggunakan domain " + config.GetEmailSuffix())
+	}
+
 	exists, err := s.Repo.FindByEmail(Email)
 	utils.Log.Printf("User exists: %v", exists)
 	if exists != nil && exists.Email != "" {
@@ -112,6 +123,10 @@ func (s *UserService) UpdateUser(ID string, Name string, Email string, Password 
 		user.Name = Name
 	}
 	if Email != "" {
+		// Validasi email suffix saat update
+		if !config.ValidateEmailSuffix(Email) {
+			return nil, errors.New("email harus menggunakan domain " + config.GetEmailSuffix())
+		}
 		user.Email = Email
 	}
 	if Password != "" {

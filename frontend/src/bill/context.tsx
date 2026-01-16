@@ -25,6 +25,34 @@ export interface FinanceYear {
     updatedAt: string;
 }
 
+// Interface baru untuk TagihanResponse dari endpoint baru
+export interface TagihanResponse {
+    id: number;
+    source: "cicilan" | "registrasi";
+    npm: string;
+    tahun_id: string;
+    academic_year: string;
+    bill_name: string;
+    amount: number;
+    paid_amount: number;
+    remaining_amount: number;
+    beasiswa?: number;
+    bantuan_ukt?: number;
+    status: "paid" | "unpaid" | "partial";
+    payment_start_date: string;
+    payment_end_date: string;
+    created_at: string;
+    updated_at: string;
+    // Untuk cicilan
+    cicilan_id?: number;
+    detail_cicilan_id?: number;
+    sequence_no?: number;
+    // Untuk registrasi
+    registrasi_id?: number;
+    kel_ukt?: string;
+}
+
+// Interface lama untuk backward compatibility (akan dihapus nanti)
 export interface StudentBill {
     ID: number;
     StudentID: string;
@@ -44,8 +72,8 @@ export interface StudentBillResponse {
     tahun: FinanceYear;
     isPaid: boolean;
     isGenerated: boolean;
-    tagihanHarusDibayar: StudentBill[] | null;
-    historyTagihan: StudentBill[] | null;
+    tagihanHarusDibayar: TagihanResponse[] | null;
+    historyTagihan: TagihanResponse[] | null;
 }
 
 // --------- CONTEXT VALUE ---------
@@ -54,8 +82,8 @@ interface StudentBillContextValue {
     isPaid: boolean;
     isGenerated: boolean;
     tahun: FinanceYear | null;
-    tagihanHarusDibayar: StudentBill[];
-    historyTagihan: StudentBill[];
+    tagihanHarusDibayar: TagihanResponse[];
+    historyTagihan: TagihanResponse[];
     loading: boolean;
     error: string | null;
     refresh: () => Promise<void>;
@@ -71,8 +99,8 @@ export const StudentBillProvider = ({ children }: { children: ReactNode }) => {
     const [tahun, setTahun] = useState<FinanceYear | null>(null);
     const [isPaid, setIsPaid] = useState(false);
     const [isGenerated, setIsGenerated] = useState(false);
-    const [tagihanHarusDibayar, setTagihanHarusDibayar] = useState<StudentBill[]>([]);
-    const [historyTagihan, setHistoryTagihan] = useState<StudentBill[]>([]);
+    const [tagihanHarusDibayar, setTagihanHarusDibayar] = useState<TagihanResponse[]>([]);
+    const [historyTagihan, setHistoryTagihan] = useState<TagihanResponse[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -82,8 +110,9 @@ export const StudentBillProvider = ({ children }: { children: ReactNode }) => {
         setError(null);
 
         try {
+            // Menggunakan endpoint baru /student-bill-new
             const res = await api.get<StudentBillResponse>(
-                `/v1/student-bill`,
+                `/v1/student-bill-new`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,

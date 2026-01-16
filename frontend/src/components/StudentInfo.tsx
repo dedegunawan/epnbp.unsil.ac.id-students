@@ -89,40 +89,14 @@ export const StudentInfo = () => {
 
 
 
-  const perbaikiTagihan = async () => {
-
-    try {
-      setLoading(true);
-
-      const res = await api.post(
-          `/v1/regenerate-student-bill`, [],
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-      );
-      if (res.status === 200 && res.data) {
-        toast({
-          title: "Perbaikan Tagihan",
-          description: `Perbaikan tagihan berhasil`,
-        });
-        window.location.reload();
-      } else {
-        throw new Error("Memperbaiki tagihan gagal.");
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: `Memperbaiki tagihan gagal.`,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const studentData: Student = useMemo(() => {
     const m = profile?.mahasiswa;
+    // Ambil status dari mahasiswa.status atau mahasiswa.status_kode (dari mahasiswa_masters via status_akademiks)
+    // Fallback ke parsed.StatusMhswID jika tidak ada
+    const statusKode = (m as any)?.status_kode ?? m?.parsed?.StatusMhswID ?? "N";
+    const statusNama = (m as any)?.status ?? m?.parsed?.StatusNama ?? "Non-Aktif";
+    
     return {
       nim: m?.mhsw_id ?? "-",
       nama: m?.nama ?? profile?.name ?? "-",
@@ -132,7 +106,7 @@ export const StudentInfo = () => {
       //semester: "-", // Anda bisa sesuaikan jika ada
       tahunMasuk: m?.parsed?.TahunMasuk ?? m?.parsed?.angkatan, // Ambil dari profile jika tersedia
       email: profile?.email, // Jika profile punya alamat
-      status: m?.parsed?.StatusMhswID,
+      status: statusNama, // Status dari mahasiswa_masters via status_akademiks
       activeYear: tahun?.description,
       periodeMulai: tahun ? `${dayjs(tahun.startDate).tz("Asia/Jakarta").format("dddd, D MMMM YYYY [pukul] HH:mm [WIB]")}`
           : "-",
@@ -150,7 +124,7 @@ export const StudentInfo = () => {
             <h3 className="font-semibold text-lg text-foreground">{studentData.nama}</h3>
             <p className="text-muted-foreground">NIM: {studentData.nim}</p>
           </div>
-          <Badge variant={studentData.status === "Aktif" ? "default" : "secondary"} className="bg-success text-success-foreground">
+          <Badge variant={studentData.status === "Aktif" || studentData.status?.toLowerCase() === "aktif" ? "default" : "secondary"} className={studentData.status === "Aktif" || studentData.status?.toLowerCase() === "aktif" ? "bg-green-600 text-white" : "bg-gray-500 text-white"}>
             {studentData.status}
           </Badge>
         </div>
@@ -224,9 +198,6 @@ export const StudentInfo = () => {
         <div className="pt-4 border-t mt-4 flex justify-end">
           <Button variant="default" onClick={backToSintesys} className="mr-2" disabled={loading}>
             Kembali ke Sintesys
-          </Button>
-          <Button variant="default" onClick={perbaikiTagihan} className="mr-2" disabled={loading}>
-            Perbaiki Tagihan
           </Button>
           <Button variant="destructive" onClick={logout}>
             Logout

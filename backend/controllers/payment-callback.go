@@ -2,8 +2,6 @@ package controllers
 
 import (
 	"encoding/json"
-	"github.com/dedegunawan/backend-ujian-telp-v5/database"
-	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/gin-gonic/gin"
 	"io/ioutil"
@@ -40,36 +38,13 @@ func PaymentCallbackHandler(c *gin.Context) {
 		bodyData = string(bodyBytes) // fallback: raw body jika bukan JSON
 	}
 
-	// === 4. Gabungkan Semua Data ===
-	requestData := map[string]interface{}{
-		"url":         c.Request.RequestURI,
-		"method":      c.Request.Method,
-		"headers":     headers,
-		"queryParams": queryParams,
-		"body":        bodyData,
-	}
-
-	// === 5. Response ke provider (customize sesuai kebutuhan) ===
+	// === 4. Response ke provider (customize sesuai kebutuhan) ===
 	responseData := map[string]interface{}{
 		"status":  "ok",
 		"message": "callback received",
 	}
 
-	// === 6. Simpan ke DB ===
-	requestJSON, _ := json.Marshal(requestData)
-	responseJSON, _ := json.Marshal(responseData)
-
-	callback := models.PaymentCallback{
-		Request:  requestJSON,
-		Response: responseJSON,
-	}
-
-	db := database.DB
-
-	if err := db.Create(&callback).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save callback"})
-		return
-	}
+	// Tidak menyimpan ke database - hanya consume data dari DBPNBP (read-only)
 
 	// === 7. Kirim response ke provider ===
 	c.JSON(http.StatusOK, responseData)

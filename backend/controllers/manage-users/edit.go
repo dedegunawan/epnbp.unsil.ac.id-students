@@ -40,7 +40,7 @@ func Edit(c *gin.Context) {
 		return
 	}
 
-	userRepo := repositories.UserRepository{DB: database.DB}
+	userRepo := repositories.UserRepository{DB: database.DBPNBP}
 	userService := services.UserService{Repo: &userRepo}
 	var password string
 	if input.Password != nil {

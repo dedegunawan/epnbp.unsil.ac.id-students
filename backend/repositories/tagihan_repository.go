@@ -24,14 +24,27 @@ func (r *TagihanRepository) FindStudentBillByID(studentBillID string) (*models.S
 	return &studentBill, err
 }
 
-// Ambil FinanceYear aktif
+// Ambil FinanceYear aktif dari budget_periods (bukan dari finance_years)
 func (r *TagihanRepository) GetActiveFinanceYear() (*models.FinanceYear, error) {
-	var fy models.FinanceYear
-	if err := r.DB.Where("is_active = ?", true).First(&fy).Error; err != nil {
+	var budgetPeriod models.BudgetPeriod
+	// Ambil dari budget_periods yang aktif
+	if err := r.DBPNBP.Where("is_active = ?", true).First(&budgetPeriod).Error; err != nil {
 		return nil, err
 	}
-	// override finance year dari budget_period
-	return &fy, nil
+	
+	// Convert BudgetPeriod ke FinanceYear
+	fy := &models.FinanceYear{
+		Code:            budgetPeriod.Kode,
+		Description:     budgetPeriod.Name,
+		AcademicYear:    budgetPeriod.Kode,
+		FiscalYear:      budgetPeriod.FiscalYear,
+		FiscalSemester:  strconv.Itoa(budgetPeriod.Semester),
+		StartDate:       budgetPeriod.PaymentStartDate,
+		EndDate:         budgetPeriod.PaymentEndDate,
+		IsActive:        budgetPeriod.IsActive,
+	}
+	
+	return fy, nil
 }
 
 func (r *TagihanRepository) GetActiveFinanceYearWithOverride(mahasiswa models.Mahasiswa) (*models.FinanceYear, error) {

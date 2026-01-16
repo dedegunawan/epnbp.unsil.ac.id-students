@@ -13,11 +13,11 @@ import (
 // TriggerPaymentIdentifierWorker POST /api/v1/payment-identifier/trigger
 // Trigger manual worker untuk check payment by identifier
 func TriggerPaymentIdentifierWorker(c *gin.Context) {
-	epnbpRepo := repositories.NewEpnbpRepository(database.DB)
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	epnbpRepo := repositories.NewEpnbpRepository(database.DBPNBP)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
 	
 	worker := services.NewPaymentIdentifierWorker(
-		database.DB,
+		database.DBPNBP,
 		database.DBPNBP,
 		epnbpRepo,
 		*tagihanRepo,

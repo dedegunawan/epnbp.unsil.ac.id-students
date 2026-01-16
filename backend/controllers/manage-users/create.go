@@ -34,7 +34,7 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	userRepo := repositories.UserRepository{DB: database.DB}
+	userRepo := repositories.UserRepository{DB: database.DBPNBP}
 	userService := services.UserService{Repo: &userRepo}
 	user, err := userService.CreateUser(input.Name, input.Email, input.Password, input.RoleIDs)
 

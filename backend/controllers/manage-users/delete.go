@@ -18,7 +18,7 @@ func Delete(c *gin.Context) {
 		return
 	}
 
-	userRepo := repositories.UserRepository{DB: database.DB}
+	userRepo := repositories.UserRepository{DB: database.DBPNBP}
 	userService := services.UserService{Repo: &userRepo}
 	userService.DeleteUser(uuidID.String())
 

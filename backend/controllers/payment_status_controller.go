@@ -106,7 +106,7 @@ func GetPaymentStatus(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	// Query builder
-	query := database.DB.Model(&models.StudentBill{})
+	query := database.DBPNBP.Model(&models.StudentBill{})
 
 	// Filter by student_id
 	if studentID != "" {
@@ -151,7 +151,7 @@ func GetPaymentStatus(c *gin.Context) {
 	// Get pay_urls untuk semua bills
 	var payUrls []models.PayUrl
 	if len(studentBillIDs) > 0 {
-		database.DB.Where("student_bill_id IN ?", studentBillIDs).
+		database.DBPNBP.Where("student_bill_id IN ?", studentBillIDs).
 			Order("created_at DESC").
 			Find(&payUrls)
 	}
@@ -242,7 +242,7 @@ func GetPaymentStatus(c *gin.Context) {
 func GetPaymentStatusSummary(c *gin.Context) {
 	academicYear := c.Query("academic_year")
 
-	query := database.DB.Model(&models.StudentBill{})
+	query := database.DBPNBP.Model(&models.StudentBill{})
 
 	if academicYear != "" {
 		query = query.Where("academic_year = ?", academicYear)
@@ -315,7 +315,7 @@ func UpdatePaymentStatus(c *gin.Context) {
 
 	// Ambil student bill
 	var studentBill models.StudentBill
-	if err := database.DB.Preload("Mahasiswa").First(&studentBill, uint(studentBillID)).Error; err != nil {
+	if err := database.DBPNBP.Preload("Mahasiswa").First(&studentBill, uint(studentBillID)).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Student bill not found"})
 			return
@@ -336,82 +336,11 @@ func UpdatePaymentStatus(c *gin.Context) {
 		return
 	}
 
-	// Parse payment date
-	var paymentDate time.Time
-	if req.PaymentDate != "" {
-		// Coba format dengan waktu
-		paymentDate, err = time.Parse("2006-01-02 15:04:05", req.PaymentDate)
-		if err != nil {
-			// Coba format tanpa waktu
-			paymentDate, err = time.Parse("2006-01-02", req.PaymentDate)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Format payment_date tidak valid. Gunakan '2006-01-02 15:04:05' atau '2006-01-02'"})
-				return
-			}
-		}
-	} else {
-		paymentDate = time.Now()
-	}
-
-	// Set default payment method
-	paymentMethod := req.PaymentMethod
-	if paymentMethod == "" {
-		paymentMethod = "Manual"
-	}
-
-	// Set default payment ref
-	paymentRef := req.PaymentRef
-	if paymentRef == "" {
-		paymentRef = "MANUAL-" + time.Now().Format("20060102150405")
-	}
-
-	// Update student bill paid_amount
-	oldPaidAmount := studentBill.PaidAmount
-	studentBill.PaidAmount = req.PaidAmount
-	if studentBill.PaidAmount > netAmount {
-		studentBill.PaidAmount = netAmount
-	}
-
-	if err := database.DB.Save(&studentBill).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate tagihan"})
-		return
-	}
-
-	// Hitung amount yang ditambahkan (untuk payment record)
-	amountAdded := studentBill.PaidAmount - oldPaidAmount
-	if amountAdded > 0 {
-		// Buat student payment record
-		studentPayment := models.StudentPayment{
-			StudentID:    studentBill.StudentID,
-			AcademicYear: studentBill.AcademicYear,
-			PaymentRef:   paymentRef,
-			Amount:       amountAdded,
-			Bank:         req.Bank,
-			Method:       paymentMethod,
-			Note:         req.Note,
-			Date:         paymentDate,
-		}
-
-		if err := database.DB.Save(&studentPayment).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat record pembayaran"})
-			return
-		}
-
-		// Buat student payment allocation
-		studentPaymentAllocation := models.StudentPaymentAllocation{
-			StudentPaymentID: studentPayment.ID,
-			StudentBillID:    studentBill.ID,
-			Amount:           amountAdded,
-		}
-
-		if err := database.DB.Save(&studentPaymentAllocation).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat alokasi pembayaran"})
-			return
-		}
-	}
+	// Tidak menyimpan ke database - hanya consume data dari DBPNBP (read-only)
+	// Operasi write dihapus - paymentDate, paymentMethod, paymentRef, oldPaidAmount tidak digunakan
 
 	// Reload student bill dengan data terbaru
-	database.DB.Preload("Mahasiswa").First(&studentBill, uint(studentBillID))
+	database.DBPNBP.Preload("Mahasiswa").First(&studentBill, uint(studentBillID))
 
 	// Hitung status baru
 	netAmount = studentBill.NetAmount()

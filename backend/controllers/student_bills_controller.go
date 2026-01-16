@@ -78,7 +78,7 @@ func GetAllStudentBills(c *gin.Context) {
 
 	// Query builder - hanya ambil dari finance year yang aktif
 	// Join dengan mahasiswa untuk search by name
-	baseQuery := database.DB.Model(&models.StudentBill{}).
+	baseQuery := database.DBPNBP.Model(&models.StudentBill{}).
 		Joins("INNER JOIN finance_years ON finance_years.academic_year = student_bills.academic_year").
 		Joins("LEFT JOIN mahasiswas ON mahasiswas.mhsw_id = student_bills.student_id").
 		Where("finance_years.is_active = ?", true)
@@ -164,7 +164,7 @@ func GetAllStudentBills(c *gin.Context) {
 		// Load Mahasiswa
 		if len(studentIDs) > 0 {
 			var mahasiswas []models.Mahasiswa
-			if err := database.DB.Where("mhsw_id IN ?", studentIDs).Find(&mahasiswas).Error; err == nil {
+			if err := database.DBPNBP.Where("mhsw_id IN ?", studentIDs).Find(&mahasiswas).Error; err == nil {
 				// Map mahasiswa by mhsw_id
 				mahasiswaMap := make(map[string]*models.Mahasiswa)
 				for i := range mahasiswas {
@@ -183,7 +183,7 @@ func GetAllStudentBills(c *gin.Context) {
 		// Load PayUrl untuk mendapatkan invoice_id
 		if len(billIDs) > 0 {
 			var payUrls []models.PayUrl
-			if err := database.DB.Where("student_bill_id IN ?", billIDs).
+			if err := database.DBPNBP.Where("student_bill_id IN ?", billIDs).
 				Order("created_at DESC").Find(&payUrls).Error; err == nil {
 				// Map payUrl by student_bill_id (ambil yang terbaru jika ada multiple)
 				for i := range payUrls {
@@ -197,7 +197,7 @@ func GetAllStudentBills(c *gin.Context) {
 		// Load PaymentConfirmation untuk mendapatkan virtual_account
 		if len(billIDs) > 0 {
 			var paymentConfirmations []models.PaymentConfirmation
-			if err := database.DB.Where("student_bill_id IN ?", billIDs).
+			if err := database.DBPNBP.Where("student_bill_id IN ?", billIDs).
 				Order("created_at DESC").Find(&paymentConfirmations).Error; err == nil {
 				// Map va_number by student_bill_id (ambil yang terbaru jika ada multiple)
 				for _, pc := range paymentConfirmations {

@@ -6,12 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
-	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
-
 	"github.com/dedegunawan/backend-ujian-telp-v5/auth"
-	"github.com/dedegunawan/backend-ujian-telp-v5/database"
-	"github.com/dedegunawan/backend-ujian-telp-v5/models"
+	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,35 +26,35 @@ func RequireAuthFromTokenDB() gin.HandlerFunc {
 			return
 		}
 
-		userTokenRepository := repositories.UserTokenRepository{DB: database.DB}
-
-		// 1. cari di db
-		userToken, err := userTokenRepository.FindByAccessToken(tokenStr)
+		// Verifikasi token langsung dari JWT - tidak perlu cek database (read-only)
+		// Coba verifikasi sebagai Keycloak token dulu (SSO)
+		claims, err := checkKeycloackToken(tokenStr)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token not recognized"})
-			c.Abort()
-			return
-		}
-
-		// 2. Verifikasi token JWT
-		var claims *Claims
-		if userToken.JwtType == models.JWTTypeInternal {
+			// Jika bukan Keycloak token, coba sebagai internal JWT
 			claims, err = checkInternalToken(tokenStr)
-		} else {
-			claims, err = checkKeycloackToken(tokenStr)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+				c.Abort()
+				return
+			}
 		}
 
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			c.Abort()
-			return
-		}
-
-		// 4. Tambahkan context user_id dan sso_id
-		c.Set("user_id", userToken.UserID)
+		// Tambahkan context dari claims
 		c.Set("sso_id", claims.Sub)
 		c.Set("email", claims.Email)
 		c.Set("name", claims.Name)
+
+		// Log untuk debugging
+		utils.Log.Info("Auth middleware - Token verified", map[string]interface{}{
+			"sso_id": claims.Sub,
+			"email":  claims.Email,
+			"name":   claims.Name,
+		})
+
+		// Untuk internal JWT, user_id ada di Sub
+		if claims.Sub != "" {
+			c.Set("user_id", claims.Sub)
+		}
 
 		c.Next()
 	}

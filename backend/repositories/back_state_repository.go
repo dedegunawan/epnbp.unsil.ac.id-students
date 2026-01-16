@@ -14,7 +14,7 @@ type backStateRepository struct {
 }
 
 func NewBackStateRepository(db *gorm.DB) BackState {
-	return &backStateRepository{DB: database.DB}
+	return &backStateRepository{DB: database.DBPNBP}
 }
 
 func (bs *backStateRepository) FindById(id uint) (*BackState, error) {

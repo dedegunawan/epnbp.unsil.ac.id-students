@@ -20,24 +20,26 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
+      {/* Header - Mobile friendly */}
       <header className="bg-card border-b border-border sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-800 rounded-lg">
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
+        <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="p-1.5 sm:p-2 bg-green-800 rounded-lg shrink-0">
+              <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Finance</h1>
-              <p className="text-sm text-muted-foreground">Modul Keuangan &amp; Pembayaran Mahasiswa / Orang Tua</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg sm:text-2xl font-bold text-foreground truncate">Finance</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
+                Modul Keuangan &amp; Pembayaran Mahasiswa / Orang Tua
+              </p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        <div className="space-y-6">
+      {/* Main Content - Mobile friendly */}
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Student Info */}
           <StudentInfo />
 

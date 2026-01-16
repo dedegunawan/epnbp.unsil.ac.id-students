@@ -26,9 +26,11 @@ func SetupRouter() *gin.Engine {
 	{
 		v1.GET("/me", middleware.RequireAuthFromTokenDB(), controllers.Me)
 		v1.GET("/student-bill", middleware.RequireAuthFromTokenDB(), controllers.GetStudentBillStatus)
+		v1.GET("/student-bill-new", middleware.RequireAuthFromTokenDB(), controllers.GetStudentBillStatusNew)
 		v1.POST("/student-bill", middleware.RequireAuthFromTokenDB(), controllers.GenerateCurrentBill)
 		v1.POST("/regenerate-student-bill", middleware.RequireAuthFromTokenDB(), controllers.RegenerateCurrentBill)
 		v1.GET("/generate/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.GenerateUrlPembayaran)
+		v1.GET("/generate-payment-new", middleware.RequireAuthFromTokenDB(), controllers.GenerateUrlPembayaranNew)
 		v1.POST("/confirm-payment/:StudentBillID", middleware.RequireAuthFromTokenDB(), controllers.ConfirmPembayaran)
 		v1.GET("/back-to-sintesys", middleware.RequireAuthFromTokenDB(), controllers.BackToSintesys)
 
@@ -43,8 +45,7 @@ func SetupRouter() *gin.Engine {
 		// Payment status logs endpoints (public, no auth required)
 		v1.GET("/payment-status-logs", controllers.GetAllPaymentStatusLogs)
 
-		// Payment identifier worker endpoints (public, no auth required)
-		v1.POST("/payment-identifier/trigger", controllers.TriggerPaymentIdentifierWorker)
+		// Worker endpoints dihapus - tidak ada operasi write ke database
 
 		v1.GET("/payment-callback", controllers.PaymentCallbackHandler)
 		v1.POST("/payment-callback", controllers.PaymentCallbackHandler)

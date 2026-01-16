@@ -17,7 +17,7 @@ import (
 )
 
 func Export(c *gin.Context) {
-	repo := repositories.UserRepository{DB: database.DB}
+	repo := repositories.UserRepository{DB: database.DBPNBP}
 	role := c.Query("role")
 	query := repo.FilterQuery(role, "")
 	users := []models.User{}

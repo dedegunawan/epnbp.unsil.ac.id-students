@@ -10,12 +10,8 @@ import (
 	_ "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/dedegunawan/backend-ujian-telp-v5/auth"
 	"github.com/dedegunawan/backend-ujian-telp-v5/config"
-	"github.com/dedegunawan/backend-ujian-telp-v5/database"
-	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
-	"github.com/dedegunawan/backend-ujian-telp-v5/services"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 )
 
@@ -40,72 +36,8 @@ func SsoLogoutHandler(c *gin.Context) {
 }
 
 func LoginHandler(c *gin.Context) {
-	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required"`
-	}
-
-	if !utils.BindJSONOrAbort(c, &req) {
-		return
-	}
-
-	// Cari user berdasarkan email
-	userRepo := repositories.UserRepository{DB: database.DB}
-
-	user, err := userRepo.FindByEmail(req.Email)
-	if err != nil {
-		utils.ErrorHandler(c, http.StatusUnauthorized, "Invalid email or password")
-		return
-	}
-
-	if user.Password == nil || len(*user.Password) <= 0 {
-		empty := ""
-		user.Password = &empty
-	}
-
-	utils.Log.Info("Login using email:", user.Email)
-
-	// Validasi password (dengan bcrypt)
-	if err := bcrypt.CompareHashAndPassword([]byte(*user.Password), []byte(req.Password)); err != nil {
-		utils.Log.Info(fmt.Sprintf("Login using email: %s, password: %s, hash: %s, err: %s", user.Email, req.Password, *user.Password, err.Error()))
-		utils.ErrorHandler(c, http.StatusUnauthorized, "Invalid email or password")
-		return
-	}
-
-	if user.IsActive == false {
-		utils.ErrorHandler(c, http.StatusUnauthorized, "User is not active")
-		return
-	}
-
-	utils.Log.Info("Try generate JWT by email :", user.Email)
-
-	// Buat token JWT
-	token, err := utils.GenerateJWT(user.ID, user.Email, user.Name, config.GetDefaultTokenExpired())
-	if err != nil {
-		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to generate token")
-		return
-	}
-
-	userTokenRepo := repositories.UserTokenRepository{DB: database.DB}
-	userTokenService := services.UserTokenService{Repo: &userTokenRepo, Context: c}
-
-	newToken, err := userTokenService.SaveLoginUserToken(
-		user.ID,
-		token,
-	)
-	if err != nil {
-		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to save token")
-		return
-	}
-
-	// Respon sukses
-	c.JSON(http.StatusOK, gin.H{
-		"message":       "Login success",
-		"user":          user,
-		"access_token":  newToken.AccessToken,
-		"refresh_token": newToken.RefreshToken,
-		"expires_at":    newToken.ExpiresAt,
-	})
+	// Login dengan email/password tidak didukung - gunakan SSO login
+	c.JSON(http.StatusNotFound, gin.H{"error": "Login dengan email/password tidak didukung, gunakan SSO login"})
 }
 
 func RefreshHandler(c *gin.Context) {
@@ -154,48 +86,16 @@ func CallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Inisialisasi repository & service
-	userRepo := repositories.UserRepository{DB: database.DB}
-	userTokenRepo := repositories.UserTokenRepository{DB: database.DB}
-
-	userService := services.UserService{Repo: &userRepo}
-	userTokenService := services.UserTokenService{Repo: &userTokenRepo}
-
-	// Temukan atau buat user berdasarkan sso_id
-	user, err := userService.GetOrCreateByEmail(claims.Sub, claims.Email, claims.Name)
-	if err != nil {
-		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to create or find user")
+	// Validasi email suffix dari SSO
+	if claims.Email != "" && !config.ValidateEmailSuffix(claims.Email) {
+		utils.ErrorHandler(c, http.StatusUnauthorized, fmt.Sprintf("Email harus menggunakan domain %s", config.GetEmailSuffix()))
 		return
 	}
 
-	// sinkronkan dengan data npm dari mahasiswa_masters (PNBP)
-	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
-	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
-
+	// Tidak perlu create/update user - hanya cek email suffix
+	// Data mahasiswa langsung dari mahasiswa_masters (read-only)
 	studentID := utils.GetEmailPrefix(claims.Email)
-	err = mahasiswaService.CreateFromMasterMahasiswa(studentID)
-
-	if err != nil {
-		utils.Log.Warn(fmt.Sprintf("CreateFromMasterMahasiswa failed for %s: %s", studentID, err.Error()))
-		utils.Log.Warn(fmt.Sprintf("Mahasiswa tidak ditemukan di mahasiswa_masters untuk studentID: %s", studentID))
-		// Tidak return error - biarkan user tetap bisa login meskipun data mahasiswa tidak ditemukan
-		// Error ini akan muncul di log untuk debugging
-	} else {
-		utils.Log.Info(fmt.Sprintf("Mahasiswa berhasil dibuat dari mahasiswa_masters untuk studentID: %s", studentID))
-	}
-
-	// Simpan access_token dan refresh_token
-	err = userTokenService.SaveUserToken(
-		user.ID,
-		token.AccessToken,
-		token.RefreshToken,
-		token.TokenType,
-		token.Expiry,
-	)
-	if err != nil {
-		utils.ErrorHandler(c, http.StatusInternalServerError, "Failed to save token")
-		return
-	}
+	utils.Log.Info(fmt.Sprintf("Login berhasil untuk studentID: %s, email: %s", studentID, claims.Email))
 
 	frontendUrl := os.Getenv("FRONTEND_URL")
 	accessToken := token.AccessToken

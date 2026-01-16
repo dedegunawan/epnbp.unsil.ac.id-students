@@ -27,7 +27,7 @@ func Index(c *gin.Context) {
 	}
 
 	// Ambil query dari repository
-	repo := repositories.UserRepository{DB: database.DB}
+	repo := repositories.UserRepository{DB: database.DBPNBP}
 	query := repo.FilterQuery(role, keyword)
 
 	// Eksekusi paginasi + meta

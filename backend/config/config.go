@@ -31,3 +31,19 @@ func GetDefaultTokenExpired() time.Time {
 func GetDefaultRefreshTokenExpired() time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
+
+// GetEmailSuffix mengembalikan email suffix yang diizinkan dari environment variable
+// Default: @student.unsil.ac.id
+func GetEmailSuffix() string {
+	suffix := os.Getenv("EMAIL_SUFFIX")
+	if suffix == "" {
+		return "@student.unsil.ac.id"
+	}
+	return suffix
+}
+
+// ValidateEmailSuffix memvalidasi apakah email memiliki suffix yang diizinkan
+func ValidateEmailSuffix(email string) bool {
+	suffix := GetEmailSuffix()
+	return len(email) >= len(suffix) && email[len(email)-len(suffix):] == suffix
+}

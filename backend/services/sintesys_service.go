@@ -5,19 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
 	"github.com/dedegunawan/backend-ujian-telp-v5/utils"
 	"github.com/go-resty/resty/v2"
 	"gorm.io/datatypes"
-	"gorm.io/gorm"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"strconv"
-	"time"
 )
 
 type Sintesys interface {
@@ -61,16 +60,7 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 
 	utils.Log.Info("Sintesys SendCallback", "npm : ", npm, " : ", resp)
 
-	encodedData, _ := json.Marshal(formBody)
-	Reponse := "Empty"
-	if resp != nil {
-		Reponse = string(resp.Body())
-	}
-	database.DB.Create(&models.SintesysCallback{
-		Url:      s.AppUrl,
-		Data:     string(encodedData),
-		Response: Reponse,
-	})
+	// Tidak menyimpan ke database - hanya consume data dari DBPNBP (read-only)
 
 	if err != nil {
 		utils.Log.Infof("Error on send callback %v", err.Error())
@@ -91,62 +81,8 @@ func (s *sintesys) SendCallback(npm, tahun_id string, ukt string) error {
 }
 
 func (s *sintesys) ScanNewCallback() {
-	for {
-		var newCallback models.PaymentCallback
-		db := database.DB
-
-		tx := db.Begin()
-		err := tx.Raw(`
-			SELECT * FROM payment_callbacks
-			WHERE status IS DISTINCT FROM 'success' AND try_count < 6
-			ORDER BY last_updated_at DESC
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
-		`).Scan(&newCallback).Error
-
-		// ❗ Error query? rollback dan lanjut
-		if err != nil {
-			tx.Rollback()
-			utils.Log.Info("Error ambil data:", err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// ❗ Data kosong? rollback dan lanjut
-		if newCallback.ID == 0 {
-			tx.Rollback()
-			utils.Log.Info("Tidak ada data callback untuk diproses")
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// ✅ Commit transaksi (mengunci record)
-		tx.Commit()
-
-		// Proses job
-		success, _, err := s.ProccessFromCallback(newCallback)
-		utils.Log.Info("ProccessFromCallback result:", success)
-
-		if success {
-			db.Model(&models.PaymentCallback{}).
-				Where("id = ?", newCallback.ID).
-				Update("status", "success")
-		} else {
-			statusError := ""
-			if newCallback.TryCount >= 5 {
-				statusError = "error"
-			}
-			db.Model(&models.PaymentCallback{}).
-				Where("id = ?", newCallback.ID).
-				Updates(map[string]interface{}{
-					"try_count":  gorm.Expr("try_count + 1"),
-					"last_error": err.Error(),
-					"status":     statusError,
-				})
-		}
-
-		time.Sleep(2 * time.Second)
-	}
+	// Worker dihapus - tidak ada operasi write ke database
+	// Semua data hanya read-only dari DBPNBP
 }
 
 func (s *sintesys) ProccessFromCallback(callback models.PaymentCallback) (bool, string, error) {
@@ -166,13 +102,13 @@ func (s *sintesys) ProccessFromCallback(callback models.PaymentCallback) (bool, 
 		return false, "", err
 	}
 
-	epnbpRepo := repositories.NewEpnbpRepository(database.DB)
+	epnbpRepo := repositories.NewEpnbpRepository(database.DBPNBP)
 	invoice, err := epnbpRepo.FindByInvoiceId(strconv.Itoa(invoiceId))
 	if err != nil {
 		return false, "", err
 	}
 
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
 	_, err = tagihanRepo.FindStudentBillByID(strconv.Itoa(int(invoice.InvoiceID)))
 
 	if err != nil {

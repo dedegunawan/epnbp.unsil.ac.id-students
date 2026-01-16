@@ -40,6 +40,8 @@ interface Mahasiswa {
     prodi_id: number;
     full_data: string;
     kel_ukt: string;
+    status?: string; // Status dari mahasiswa_masters via status_akademiks
+    status_kode?: string; // Kode status (A, N, dll)
     parsed: ParsedFullData;
     prodi: Prodi;
 }

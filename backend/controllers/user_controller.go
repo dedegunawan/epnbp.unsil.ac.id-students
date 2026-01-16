@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dedegunawan/backend-ujian-telp-v5/config"
 	"github.com/dedegunawan/backend-ujian-telp-v5/database"
 	"github.com/dedegunawan/backend-ujian-telp-v5/models"
 	"github.com/dedegunawan/backend-ujian-telp-v5/repositories"
@@ -19,304 +19,82 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func getMahasiswa(c *gin.Context) (*models.User, *models.Mahasiswa, bool) {
-	userRepo := repositories.UserRepository{DB: database.DB}
-	ssoID := c.GetString("sso_id")
+func getMahasiswa(c *gin.Context) (*models.MahasiswaMaster, bool) {
+	// Ambil email dari context (token SSO) - tidak perlu query ke tabel users
 	email := c.GetString("email")
+	ssoID := c.GetString("sso_id")
 	name := c.GetString("name")
 
-	utils.Log.Info("getMahasiswa", "sso_id", ssoID, "email", email, "name", name)
+	utils.Log.Info("getMahasiswa", map[string]interface{}{
+		"sso_id": ssoID,
+		"email":  email,
+		"name":   name,
+	})
 
-	var user *models.User
-	var err error
-
-	// Coba cari berdasarkan sso_id terlebih dahulu
-	if ssoID != "" {
-		user, err = userRepo.FindBySSOID(ssoID)
-		if err == nil && user != nil {
-			utils.Log.Info("User found by sso_id:", ssoID)
-		} else {
-			utils.Log.Info("User not found by sso_id:", ssoID, "error:", err)
-		}
+	// Validasi email tidak kosong
+	if email == "" {
+		utils.Log.Error("Email kosong dari context", map[string]interface{}{
+			"sso_id": ssoID,
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email tidak ditemukan dalam token"})
+		return nil, true
 	}
 
-	// Jika tidak ditemukan berdasarkan sso_id, coba cari berdasarkan email
-	if user == nil && email != "" {
-		utils.Log.Info("Trying to find user by email:", email)
-		user, err = userRepo.FindByEmail(email)
-		if err == nil && user != nil {
-			utils.Log.Info("User found by email:", email, "user_id:", user.ID.String())
-			// Update sso_id jika belum ada atau berbeda
-			if user.SSOID == nil || (ssoID != "" && *user.SSOID != ssoID) {
-				oldSSOID := "nil"
-				if user.SSOID != nil {
-					oldSSOID = *user.SSOID
-				}
-				utils.Log.Info("Updating user sso_id from", oldSSOID, "to", ssoID)
-				user.SSOID = &ssoID
-				if updateErr := userRepo.Update(user); updateErr != nil {
-					utils.Log.Error("Failed to update user sso_id:", updateErr)
-				} else {
-					utils.Log.Info("Updated user sso_id successfully:", ssoID)
-				}
-			}
-		} else {
-			utils.Log.Info("User not found by email:", email, "error:", err)
-		}
-	} else if user == nil {
-		utils.Log.Warn("Cannot search by email - email is empty or user already found")
+	// Validasi email suffix
+	if !config.ValidateEmailSuffix(email) {
+		utils.Log.Error("Email suffix tidak valid", map[string]interface{}{
+			"email":           email,
+			"required_suffix": config.GetEmailSuffix(),
+		})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": fmt.Sprintf("Email harus menggunakan domain %s", config.GetEmailSuffix())})
+		return nil, true
 	}
 
-	// Jika user masih tidak ditemukan, buat user baru dari token claims
-	if user == nil {
-		if email == "" {
-			utils.Log.Error("Cannot create user - email is empty", "sso_id", ssoID, "name", name)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required but not found in token"})
-			return nil, nil, true
-		}
-		if ssoID == "" {
-			utils.Log.Error("Cannot create user - sso_id is empty", "email", email, "name", name)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "SSO ID is required but not found in token"})
-			return nil, nil, true
-		}
-
-		utils.Log.Info("Creating new user from token claims", "sso_id", ssoID, "email", email, "name", name)
-		userService := services.UserService{Repo: &userRepo}
-		user, err = userService.GetOrCreateByEmail(ssoID, email, name)
-		if err != nil {
-			utils.Log.Error("Failed to create user:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
-			return nil, nil, true
-		}
-		utils.Log.Info("User created successfully:", user.ID.String(), "email:", user.Email, "sso_id:", func() string {
-			if user.SSOID != nil {
-				return *user.SSOID
-			}
-			return "nil"
-		}())
+	// Ambil studentID dari email
+	studentID := utils.GetEmailPrefix(email)
+	if studentID == "" {
+		utils.Log.Error("StudentID kosong dari email", map[string]interface{}{
+			"email": email,
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tidak dapat mengambil NPM dari email"})
+		return nil, true
 	}
 
-	if user == nil {
-		errorMsg := "User not found and could not be created"
-		utils.Log.Error("User not found", "sso_id", ssoID, "email", email, "error", errorMsg)
-		c.JSON(http.StatusBadRequest, gin.H{"error": errorMsg})
-		return nil, nil, true
+	// Ambil data langsung dari mahasiswa_masters (tidak perlu query ke users)
+	var mhswMaster models.MahasiswaMaster
+	err := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", studentID).First(&mhswMaster).Error
+	if err != nil {
+		utils.Log.Error("Gagal mengambil data dari mahasiswa_masters", map[string]interface{}{
+			"studentID": studentID,
+			"email":     email,
+			"error":     err.Error(),
+		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Data mahasiswa tidak ditemukan"})
+		return nil, true
 	}
 
-	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
-	userEmail := user.Email
-	mahasiswa, err := mahasiswaRepo.FindByEmailPattern(userEmail)
+	utils.Log.Info("Mahasiswa ditemukan dari mahasiswa_masters", map[string]interface{}{
+		"studentID": studentID,
+		"email":     email,
+		"nama":      mhswMaster.NamaLengkap,
+	})
 
-	// Jika mahasiswa tidak ditemukan, coba buat dari mahasiswa_masters
-	if err != nil || mahasiswa == nil {
-		studentID := utils.GetEmailPrefix(userEmail)
-		if studentID != "" {
-			utils.Log.Info("Mahasiswa tidak ditemukan di tabel mahasiswas, mencoba membuat dari mahasiswa_masters", map[string]interface{}{
-				"studentID": studentID,
-				"email":     userEmail,
-				"error":     err,
-			})
-			mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
-			errCreate := mahasiswaService.CreateFromMasterMahasiswa(studentID)
-			if errCreate == nil {
-				// Tunggu sebentar untuk memastikan data sudah tersimpan
-				time.Sleep(200 * time.Millisecond)
-				// Coba ambil lagi setelah dibuat dengan Preload relasi
-				mahasiswa, err = mahasiswaRepo.FindByMhswID(studentID)
-				if err == nil && mahasiswa != nil {
-					// Validasi data mahasiswa sudah terisi dengan benar
-					if mahasiswa.MhswID == "" || mahasiswa.MhswID != studentID {
-						utils.Log.Error("Mahasiswa dibuat tapi MhswID tidak valid", map[string]interface{}{
-							"studentID":   studentID,
-							"mhswID":      mahasiswa.MhswID,
-							"mahasiswaID": mahasiswa.ID,
-							"nama":        mahasiswa.Nama,
-							"prodiID":     mahasiswa.ProdiID,
-						})
-						mahasiswa = nil // Set ke nil agar tidak digunakan
-					} else {
-						utils.Log.Info("Mahasiswa berhasil dibuat dari mahasiswa_masters", map[string]interface{}{
-							"studentID": studentID,
-							"mhswID":    mahasiswa.MhswID,
-							"nama":      mahasiswa.Nama,
-							"prodiID":   mahasiswa.ProdiID,
-							"prodi":     mahasiswa.Prodi,
-						})
-					}
-				} else {
-					utils.Log.Error("Mahasiswa tidak ditemukan setelah dibuat dari mahasiswa_masters", map[string]interface{}{
-						"studentID": studentID,
-						"error":     err,
-					})
-					// Coba query langsung untuk debug
-					var debugMhsw models.Mahasiswa
-					debugErr := database.DB.Where("mhsw_id = ?", studentID).First(&debugMhsw).Error
-					utils.Log.Info("Debug query mahasiswa", map[string]interface{}{
-						"studentID": studentID,
-						"error":     debugErr,
-						"found":     debugMhsw.ID > 0,
-						"mhswID":    debugMhsw.MhswID,
-					})
-				}
-			} else {
-				utils.Log.Error("Gagal membuat mahasiswa dari mahasiswa_masters", map[string]interface{}{
-					"studentID": studentID,
-					"error":     errCreate.Error(),
-				})
-				// Jangan set mahasiswa = nil di sini, biarkan tetap nil dari awal
-			}
-		} else {
-			utils.Log.Warn("StudentID kosong, tidak dapat membuat mahasiswa dari mahasiswa_masters", "email", userEmail)
-		}
-	}
-
-	mahasiswaID := "nil"
-	if mahasiswa != nil {
-		mahasiswaID = mahasiswa.MhswID
-	}
-	utils.Log.Info("mahasiswa found", "email", userEmail, "mahasiswa_id", mahasiswaID)
-
-	return user, mahasiswa, false
+	return &mhswMaster, false
 }
 
 func Me(c *gin.Context) {
 	utils.Log.Info("Endpoint /me dipanggil")
 
-	user, mahasiswa, mustreturn := getMahasiswa(c)
+	// Ambil data langsung dari mahasiswa_masters (tidak perlu query ke users)
+	mhswMaster, mustreturn := getMahasiswa(c)
 	if mustreturn {
 		utils.Log.Warn("Endpoint /me: getMahasiswa mengembalikan mustreturn=true")
 		return
 	}
 
-	// Validasi mahasiswa tidak nil
-	if mahasiswa == nil {
+	if mhswMaster == nil {
 		utils.Log.Warn("Endpoint /me: Mahasiswa tidak ditemukan")
-		c.JSON(200, gin.H{
-			"id":        user.ID,
-			"name":      user.Name,
-			"email":     user.Email,
-			"sso_id":    c.GetString("sso_id"),
-			"is_active": user.IsActive,
-			"mahasiswa": nil,
-			"semester":  0,
-		})
-		return
-	}
-
-	// Selalu sinkronkan data mahasiswa dari mahasiswa_masters saat endpoint /me dipanggil
-	// Ini memastikan data selalu up-to-date dari database PNBP
-	mahasiswaRepo := repositories.NewMahasiswaRepository(database.DB)
-	mahasiswaService := services.NewMahasiswaService(mahasiswaRepo)
-
-	utils.Log.Info("Endpoint /me: Sinkronkan data mahasiswa dari mahasiswa_masters", map[string]interface{}{
-		"mhswID":  mahasiswa.MhswID,
-		"prodiID": mahasiswa.ProdiID,
-	})
-
-	// Sync dari mahasiswa_masters (selalu update, tidak peduli sudah ada atau belum)
-	errSync := mahasiswaService.CreateFromMasterMahasiswa(mahasiswa.MhswID)
-	if errSync == nil {
-		// Reload mahasiswa dengan relasi setelah sync (hanya sekali)
-		mahasiswa, _ = mahasiswaRepo.FindByMhswID(mahasiswa.MhswID)
-		utils.Log.Info("Endpoint /me: Data mahasiswa berhasil di-sync dari mahasiswa_masters", map[string]interface{}{
-			"mhswID":  mahasiswa.MhswID,
-			"prodiID": mahasiswa.ProdiID,
-			"nama":    mahasiswa.Nama,
-		})
-	} else {
-		utils.Log.Warn("Endpoint /me: Gagal sync mahasiswa dari mahasiswa_masters", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
-			"error":  errSync.Error(),
-		})
-	}
-
-	// Jika masih kosong, ambil langsung dari database PNBP
-	if mahasiswa != nil && (mahasiswa.ProdiID == 0 || mahasiswa.Prodi.ID == 0 || mahasiswa.Prodi.KodeProdi == "") {
-		utils.Log.Info("Endpoint /me: Prodi masih kosong, ambil langsung dari database PNBP", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
-		})
-
-		// Ambil dari mahasiswa_masters
-		var mhswMaster models.MahasiswaMaster
-		errMaster := database.DBPNBP.Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
-		if errMaster == nil && mhswMaster.ProdiID > 0 {
-			// Ambil prodi dari database PNBP
-			var prodiPnbp models.ProdiPnbp
-			errProdi := database.DBPNBP.Where("id = ?", mhswMaster.ProdiID).First(&prodiPnbp).Error
-			if errProdi == nil {
-				// Ambil fakultas dari database PNBP
-				var fakultasPnbp models.FakultasPnbp
-				errFakultas := database.DBPNBP.Where("id = ?", prodiPnbp.FakultasID).First(&fakultasPnbp).Error
-				if errFakultas == nil {
-					// Sinkron ke database lokal
-					var prodi models.Prodi
-					var fakultas models.Fakultas
-
-					// Sinkron fakultas
-					database.DB.FirstOrCreate(&fakultas, models.Fakultas{
-						KodeFakultas: fakultasPnbp.KodeFakultas,
-					})
-					database.DB.Model(&fakultas).Update("nama_fakultas", fakultasPnbp.NamaFakultas)
-
-					// Sinkron prodi
-					database.DB.FirstOrCreate(&prodi, models.Prodi{
-						KodeProdi:  prodiPnbp.KodeProdi,
-						FakultasID: fakultas.ID,
-					})
-					database.DB.Model(&prodi).Updates(models.Prodi{
-						NamaProdi:  prodiPnbp.NamaProdi,
-						FakultasID: fakultas.ID,
-					})
-
-					// Update mahasiswa dengan ProdiID yang benar
-					database.DB.Model(mahasiswa).Update("prodi_id", prodi.ID)
-
-					// Reload mahasiswa dengan relasi (hanya jika benar-benar diperlukan)
-					// Gunakan Preload untuk memastikan relasi ter-load tanpa query tambahan
-					database.DB.Preload("Prodi.Fakultas").First(mahasiswa, mahasiswa.ID)
-
-					utils.Log.Info("Endpoint /me: Prodi dan Fakultas berhasil di-sync dari database PNBP", map[string]interface{}{
-						"mhswID":    mahasiswa.MhswID,
-						"prodiID":   prodi.ID,
-						"kodeProdi": prodi.KodeProdi,
-					})
-				}
-			}
-		}
-	}
-
-	// Ambil data langsung dari mahasiswa_masters di database PNBP, bukan dari tabel mahasiswa
-	var mhswMaster models.MahasiswaMaster
-	if mahasiswa != nil {
-		errMaster := database.DBPNBP.Preload("MasterTagihan").Where("student_id = ?", mahasiswa.MhswID).First(&mhswMaster).Error
-		if errMaster != nil {
-			utils.Log.Error("Endpoint /me: Gagal mengambil data dari mahasiswa_masters", map[string]interface{}{
-				"mhswID": mahasiswa.MhswID,
-				"error":  errMaster.Error(),
-			})
-			// Fallback ke data dari tabel mahasiswa jika tidak ditemukan
-			c.JSON(200, gin.H{
-				"id":        user.ID,
-				"name":      user.Name,
-				"email":     user.Email,
-				"sso_id":    c.GetString("sso_id"),
-				"is_active": user.IsActive,
-				"mahasiswa": mahasiswa,
-				"semester":  0,
-			})
-			return
-		}
-	} else {
-		// Jika mahasiswa nil, return early
-		c.JSON(200, gin.H{
-			"id":        user.ID,
-			"name":      user.Name,
-			"email":     user.Email,
-			"sso_id":    c.GetString("sso_id"),
-			"is_active": user.IsActive,
-			"mahasiswa": nil,
-			"semester":  0,
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Data mahasiswa tidak ditemukan"})
 		return
 	}
 
@@ -330,12 +108,40 @@ func Me(c *gin.Context) {
 		}
 	}
 
+	// Ambil status mahasiswa dari mahasiswa_masters via status_akademiks
+	var statusMahasiswa string = "Non-Aktif"
+	var statusKode string = "N"
+	if mhswMaster.StatusAkademikID > 0 {
+		var statusAkademik models.StatusAkademik
+		errStatus := database.DBPNBP.Where("id = ?", mhswMaster.StatusAkademikID).First(&statusAkademik).Error
+		if errStatus == nil && statusAkademik.Kode != "" {
+			statusKode = statusAkademik.Kode
+			statusMahasiswa = statusAkademik.Nama
+			utils.Log.Info("Endpoint /me: Status mahasiswa diambil dari status_akademiks", map[string]interface{}{
+				"mhswID":           mhswMaster.StudentID,
+				"StatusAkademikID": mhswMaster.StatusAkademikID,
+				"Kode":             statusAkademik.Kode,
+				"Nama":             statusAkademik.Nama,
+			})
+		} else {
+			utils.Log.Warn("Endpoint /me: Status akademik tidak ditemukan", map[string]interface{}{
+				"mhswID":           mhswMaster.StudentID,
+				"StatusAkademikID": mhswMaster.StatusAkademikID,
+				"error":            errStatus,
+			})
+		}
+	} else {
+		utils.Log.Warn("Endpoint /me: StatusAkademikID = 0", map[string]interface{}{
+			"mhswID": mhswMaster.StudentID,
+		})
+	}
+
 	// Hitung semester dari mahasiswa_masters
 	semester := 0
-	semester, err := semesterSaatIniMahasiswaFromMaster(&mhswMaster, mahasiswa)
+	semester, err := semesterSaatIniMahasiswaFromMaster(mhswMaster, nil)
 	if err != nil {
 		utils.Log.Error("Endpoint /me: Gagal menghitung semester", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
+			"mhswID": mhswMaster.StudentID,
 			"error":  err.Error(),
 		})
 		semester = 0
@@ -344,81 +150,16 @@ func Me(c *gin.Context) {
 	// Format UKT kelompok (decimal ke int, lalu ke string)
 	kelompokUKT := strconv.Itoa(int(mhswMaster.UKT))
 
-	// Parse full_data untuk mendapatkan parsed object
-	var parsedData map[string]interface{}
-	if mahasiswa.FullData != "" {
-		if err := json.Unmarshal([]byte(mahasiswa.FullData), &parsedData); err != nil {
-			utils.Log.Warn("Endpoint /me: Gagal parse FullData", map[string]interface{}{
-				"mhswID": mahasiswa.MhswID,
-				"error":  err.Error(),
-			})
-			parsedData = make(map[string]interface{})
-		}
-	} else {
-		parsedData = make(map[string]interface{})
-	}
-
-	// Log fullDataMap untuk debugging - tambahkan NPM yang bermasalah
-	if mahasiswa.MhswID == "227007054" || mahasiswa.MhswID == "253401111128" {
-		utils.Log.Info(fmt.Sprintf("=== ANALISIS fullDataMap di endpoint /me untuk NPM %s ===", mahasiswa.MhswID), map[string]interface{}{
-			"fullDataRaw":    mahasiswa.FullData,
-			"fullDataParsed": parsedData,
-			"mhswMaster": map[string]interface{}{
-				"ID":               mhswMaster.ID,
-				"StudentID":        mhswMaster.StudentID,
-				"NamaLengkap":      mhswMaster.NamaLengkap,
-				"ProdiID":          mhswMaster.ProdiID,
-				"ProgramID":        mhswMaster.ProgramID,
-				"TahunMasuk":       mhswMaster.TahunMasuk,
-				"SemesterMasukID":  mhswMaster.SemesterMasukID,
-				"StatusAkademikID": mhswMaster.StatusAkademikID,
-				"UKT":              mhswMaster.UKT,
-				"MasterTagihanID":  mhswMaster.MasterTagihanID,
-			},
-			"prodiPnbp": map[string]interface{}{
-				"ID":         prodiPnbp.ID,
-				"KodeProdi":  prodiPnbp.KodeProdi,
-				"NamaProdi":  prodiPnbp.NamaProdi,
-				"FakultasID": prodiPnbp.FakultasID,
-			},
-			"fakultasPnbp": map[string]interface{}{
-				"ID":           fakultasPnbp.ID,
-				"KodeFakultas": fakultasPnbp.KodeFakultas,
-				"NamaFakultas": fakultasPnbp.NamaFakultas,
-			},
-			"semester":    semester,
-			"kelompokUKT": kelompokUKT,
-		})
-	}
-
-	// Update parsed data dengan data dari mahasiswa_masters
-	// Pastikan UKT dan UKTNominal selalu benar dari FullData yang sudah di-sync
-	parsedData["TahunMasuk"] = mhswMaster.TahunMasuk
-	parsedData["angkatan"] = strconv.Itoa(mhswMaster.TahunMasuk) // Frontend menggunakan 'angkatan' sebagai string
-
-	// Pastikan UKT tidak 0 - ambil langsung dari mahasiswa_masters
-	if mhswMaster.UKT == 0 {
-		utils.Log.Warn("Endpoint /me: UKT dari mahasiswa_masters adalah 0", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
-			"UKT":    mhswMaster.UKT,
-		})
-	}
-	parsedData["UKT"] = int(mhswMaster.UKT) // Pastikan UKT selalu dari mahasiswa_masters
-	parsedData["master_tagihan_id"] = mhswMaster.MasterTagihanID
-
-	// SELALU ambil UKTNominal langsung dari detail_tagihan untuk memastikan data terbaru
-	// Jangan bergantung pada FullData yang mungkin belum ter-update
+	// Ambil UKTNominal dari detail_tagihan
 	nominalUKTFromDetail := int64(0)
-
-	// Validasi: UKT dan MasterTagihanID harus > 0
 	if mhswMaster.MasterTagihanID == 0 {
 		utils.Log.Warn("Endpoint /me: MasterTagihanID adalah 0, tidak bisa mengambil UKTNominal", map[string]interface{}{
-			"mhswID": mahasiswa.MhswID,
+			"mhswID": mhswMaster.StudentID,
 			"UKT":    mhswMaster.UKT,
 		})
 	} else if mhswMaster.UKT == 0 {
 		utils.Log.Warn("Endpoint /me: UKT adalah 0, tidak bisa mengambil UKTNominal", map[string]interface{}{
-			"mhswID":          mahasiswa.MhswID,
+			"mhswID":          mhswMaster.StudentID,
 			"masterTagihanID": mhswMaster.MasterTagihanID,
 		})
 	} else {
@@ -432,12 +173,6 @@ func Me(c *gin.Context) {
 
 		if errDetail == nil {
 			nominalUKTFromDetail = detailTagihan.Nominal
-			utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan", map[string]interface{}{
-				"mhswID":          mahasiswa.MhswID,
-				"UKTNominal":      detailTagihan.Nominal,
-				"kelompokUKT":     UKTStr,
-				"masterTagihanID": mhswMaster.MasterTagihanID,
-			})
 		} else {
 			// Fallback: coba format float dengan 2 desimal
 			UKTFloat := fmt.Sprintf("%.2f", mhswMaster.UKT)
@@ -445,12 +180,6 @@ func Me(c *gin.Context) {
 				First(&detailTagihan).Error
 			if errDetail == nil {
 				nominalUKTFromDetail = detailTagihan.Nominal
-				utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan (format float)", map[string]interface{}{
-					"mhswID":          mahasiswa.MhswID,
-					"UKTNominal":      detailTagihan.Nominal,
-					"kelompokUKT":     UKTFloat,
-					"masterTagihanID": mhswMaster.MasterTagihanID,
-				})
 			} else {
 				// Fallback: coba tanpa desimal
 				UKTNoDecimal := fmt.Sprintf("%.0f", mhswMaster.UKT)
@@ -458,114 +187,58 @@ func Me(c *gin.Context) {
 					First(&detailTagihan).Error
 				if errDetail == nil {
 					nominalUKTFromDetail = detailTagihan.Nominal
-					utils.Log.Info("Endpoint /me: UKTNominal diambil dari detail_tagihan (format no decimal)", map[string]interface{}{
-						"mhswID":          mahasiswa.MhswID,
-						"UKTNominal":      detailTagihan.Nominal,
-						"kelompokUKT":     UKTNoDecimal,
-						"masterTagihanID": mhswMaster.MasterTagihanID,
-					})
-				} else {
-					// Log semua format yang sudah dicoba
-					utils.Log.Error("Endpoint /me: UKTNominal tidak ditemukan di detail_tagihan dengan semua format", map[string]interface{}{
-						"mhswID":          mahasiswa.MhswID,
-						"masterTagihanID": mhswMaster.MasterTagihanID,
-						"UKT":             mhswMaster.UKT,
-						"UKTStr":          UKTStr,
-						"UKTFloat":        UKTFloat,
-						"UKTNoDecimal":    UKTNoDecimal,
-						"error":           errDetail.Error(),
-					})
-
-					// Jika tidak ditemukan, gunakan dari parsedData jika ada dan valid
-					if uktNominal, exists := parsedData["UKTNominal"]; exists && uktNominal != nil {
-						if val, ok := uktNominal.(float64); ok && val > 0 {
-							nominalUKTFromDetail = int64(val)
-							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (float64)", map[string]interface{}{
-								"mhswID":     mahasiswa.MhswID,
-								"UKTNominal": nominalUKTFromDetail,
-							})
-						} else if val, ok := uktNominal.(int64); ok && val > 0 {
-							nominalUKTFromDetail = val
-							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (int64)", map[string]interface{}{
-								"mhswID":     mahasiswa.MhswID,
-								"UKTNominal": nominalUKTFromDetail,
-							})
-						} else if val, ok := uktNominal.(int); ok && val > 0 {
-							nominalUKTFromDetail = int64(val)
-							utils.Log.Info("Endpoint /me: UKTNominal diambil dari parsedData (int)", map[string]interface{}{
-								"mhswID":     mahasiswa.MhswID,
-								"UKTNominal": nominalUKTFromDetail,
-							})
-						}
-					}
 				}
 			}
 		}
 	}
 
-	// SELALU update parsedData dengan UKTNominal yang benar
+	// Buat parsedData
+	parsedData := make(map[string]interface{})
+	parsedData["TahunMasuk"] = mhswMaster.TahunMasuk
+	parsedData["angkatan"] = strconv.Itoa(mhswMaster.TahunMasuk)
+	parsedData["UKT"] = int(mhswMaster.UKT)
 	parsedData["UKTNominal"] = nominalUKTFromDetail
-
-	// Log untuk debugging
-	utils.Log.Info("Endpoint /me: Final parsedData UKT dan UKTNominal", map[string]interface{}{
-		"mhswID":     mahasiswa.MhswID,
-		"UKT":        parsedData["UKT"],
-		"UKTNominal": parsedData["UKTNominal"],
-		"mhswUKT":    mhswMaster.UKT,
-	})
+	parsedData["master_tagihan_id"] = mhswMaster.MasterTagihanID
+	parsedData["StatusMhswID"] = statusKode // Status dari mahasiswa_masters
+	parsedData["StatusAkademikID"] = mhswMaster.StatusAkademikID
+	parsedData["StatusNama"] = statusMahasiswa
 
 	// Buat response mahasiswa dari mahasiswa_masters
 	mahasiswaResponse := gin.H{
-		"id":          mahasiswa.ID,
 		"mhsw_id":     mhswMaster.StudentID,
 		"nama":        mhswMaster.NamaLengkap,
-		"prodi_id":    mahasiswa.ProdiID,                             // Tetap gunakan prodi_id dari tabel mahasiswa untuk relasi
-		"kel_ukt":     kelompokUKT,                                   // Kelompok UKT dari mahasiswa_masters
-		"bipot_id":    fmt.Sprintf("%d", mhswMaster.MasterTagihanID), // master_tagihan_id
+		"kel_ukt":     kelompokUKT,
+		"bipot_id":    fmt.Sprintf("%d", mhswMaster.MasterTagihanID),
 		"email":       mhswMaster.Email,
-		"tahun_masuk": mhswMaster.TahunMasuk, // Tahun Masuk langsung dari mahasiswa_masters
-		"full_data":   mahasiswa.FullData,    // Tetap gunakan FullData dari tabel mahasiswa
-		"parsed":      parsedData,            // Parsed data dengan TahunMasuk dan angkatan
+		"tahun_masuk": mhswMaster.TahunMasuk,
+		"status":      statusMahasiswa, // Status dari mahasiswa_masters
+		"status_kode": statusKode,      // Kode status (A, N, dll)
+		"parsed":      parsedData,
 		"prodi": gin.H{
-			"id":          mahasiswa.Prodi.ID,
 			"kode_prodi":  prodiPnbp.KodeProdi,
 			"nama_prodi":  prodiPnbp.NamaProdi,
-			"fakultas_id": mahasiswa.Prodi.FakultasID,
+			"fakultas_id": prodiPnbp.FakultasID,
 			"fakultas": gin.H{
-				"id":            mahasiswa.Prodi.Fakultas.ID,
 				"kode_fakultas": fakultasPnbp.KodeFakultas,
 				"nama_fakultas": fakultasPnbp.NamaFakultas,
-				"prodis":        nil,
 			},
-			"mahasiswas": nil,
 		},
 	}
 
+	email := c.GetString("email")
 	ssoID := c.GetString("sso_id")
-	utils.Log.Info("Endpoint /me: Data mahasiswa dari mahasiswa_masters", map[string]interface{}{
-		"userID":      user.ID,
-		"mhswID":      mhswMaster.StudentID,
-		"nama":        mhswMaster.NamaLengkap,
-		"tahunMasuk":  mhswMaster.TahunMasuk,
-		"kelompokUKT": kelompokUKT,
-		"semester":    semester,
-		"prodiID":     prodiPnbp.ID,
-		"fakultasID":  fakultasPnbp.ID,
-	})
+	name := c.GetString("name")
 
 	response := gin.H{
-		"id":        user.ID,
-		"name":      user.Name,
-		"email":     user.Email,
+		"name":      name,
+		"email":     email,
 		"sso_id":    ssoID,
-		"is_active": user.IsActive,
 		"mahasiswa": mahasiswaResponse,
 		"semester":  semester,
 	}
 
 	utils.Log.Info("Endpoint /me: Response berhasil", map[string]interface{}{
-		"userID":   user.ID,
-		"mhswID":   mahasiswa.MhswID,
+		"mhswID":   mhswMaster.StudentID,
 		"semester": semester,
 	})
 
@@ -586,8 +259,8 @@ func semesterSaatIniMahasiswa(mahasiswa *models.Mahasiswa) (int, error) {
 		"nama":   mahasiswa.Nama,
 	})
 
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
 	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	// Panggil repository untuk ambil FinanceYear aktif (berisi budget_periods.kode)
@@ -713,17 +386,24 @@ func semesterSaatIniMahasiswaFromMaster(mhswMaster *models.MahasiswaMaster, maha
 		return 0, fmt.Errorf("StudentID kosong")
 	}
 
+	// Buat dummy mahasiswa untuk GetActiveFinanceYearWithOverride jika mahasiswa nil
+	var dummyMahasiswa models.Mahasiswa
+	if mahasiswa == nil {
+		dummyMahasiswa.MhswID = mhswMaster.StudentID
+		mahasiswa = &dummyMahasiswa
+	}
+
 	utils.Log.Info("semesterSaatIniMahasiswaFromMaster: Memulai perhitungan semester", map[string]interface{}{
 		"mhswID": mhswMaster.StudentID,
 		"nama":   mhswMaster.NamaLengkap,
 	})
 
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
-	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
+	masterTagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
+	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanRepo)
 
-	// Panggil repository untuk ambil FinanceYear aktif (berisi budget_periods.kode)
-	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
+	// Ambil FinanceYear aktif langsung dari budget_periods (tidak perlu override karena tidak ada mahasiswa lokal)
+	activeYear, err := tagihanRepo.GetActiveFinanceYear()
 	if err != nil {
 		utils.Log.Error("semesterSaatIniMahasiswaFromMaster: Gagal ambil FinanceYear aktif", map[string]interface{}{
 			"mhswID": mhswMaster.StudentID,
@@ -895,104 +575,16 @@ type StudentBillResponse struct {
 
 // GET /student-bill
 func GetStudentBillStatus(c *gin.Context) {
-	_, mahasiswa, mustreturn := getMahasiswa(c)
-	if mustreturn {
-		return
-	}
-
-	mhswID := mahasiswa.MhswID
-
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-
-	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
-		return
-	}
-
-	// ambil tagihan mahasiswa semester sekarang
-	tagihan, err := tagihanRepo.GetStudentBills(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-
-	// ambil tagihan yang semester sebelumnya belum dibayar
-	unpaidTagihan, err := tagihanRepo.GetAllUnpaidBillsExcept(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-
-	// ambil tagihan semester sebelumnya yang sudah dibayar
-	paidTagihan, err := tagihanRepo.GetAllPaidBillsExcept(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-
-	// Pisahkan: tagihan harus dibayar (belum lunas), dan histori
-	var tagihanHarusDibayar []models.StudentBill
-	var historyTagihan []models.StudentBill
-	allPaid := true
-
-	for _, t := range tagihan {
-		if t.Remaining() > 0 {
-			tagihanHarusDibayar = append(tagihanHarusDibayar, t)
-			allPaid = false
-		} else {
-			historyTagihan = append(historyTagihan, t)
-		}
-	}
-
-	for _, t := range unpaidTagihan {
-		tagihanHarusDibayar = append(tagihanHarusDibayar, t)
-	}
-
-	for _, t := range paidTagihan {
-		historyTagihan = append(historyTagihan, t)
-	}
-
-	isGenerated := len(tagihan) > 0
-	if !isGenerated {
-		allPaid = false
-	}
-
-	response := StudentBillResponse{
-		Tahun:               *activeYear,
-		IsPaid:              allPaid,
-		IsGenerated:         isGenerated,
-		TagihanHarusDibayar: tagihanHarusDibayar,
-		HistoryTagihan:      historyTagihan,
-	}
-
-	c.JSON(http.StatusOK, response)
+	// Tidak menggunakan endpoint ini lagi - gunakan GetStudentBillStatusNew
+	c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint deprecated, gunakan /student-bill-new"})
+	return
 }
 
 // POST /student-bill
 func RegenerateCurrentBill(c *gin.Context) {
-	_, mahasiswa, mustreturn := getMahasiswa(c)
-	if mustreturn {
-		return
-	}
-
-	mhswID := mahasiswa.MhswID
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-
-	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
-		return
-	}
-
-	err = tagihanRepo.DeleteUnpaidBills(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-	GenerateCurrentBill(c)
+	// Endpoint ini deprecated - tidak perlu regenerate tagihan lagi
+	c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint deprecated, tagihan langsung dari cicilan/registrasi"})
+	return
 }
 
 func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
@@ -1017,116 +609,14 @@ func GetIsMahasiswaAktifFromFullData(mahasiswa models.Mahasiswa) bool {
 }
 
 func GenerateCurrentBill(c *gin.Context) {
-	_, mahasiswa, mustreturn := getMahasiswa(c)
-	if mustreturn {
-		return
-	}
-
-	mhswID := mahasiswa.MhswID
-
-	if len(mhswID) >= 3 {
-		if mhswID[2] == '8' || mhswID[2] == '9' {
-			GenerateCurrentBillPascasarjana(c, *mahasiswa)
-			return
-		}
-	}
-
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-
-	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
-		return
-	}
-
-	// Panggil repository untuk ambil FinanceYear aktif
-	// hardcode status mahasiswa aktif
-	if !GetIsMahasiswaAktifFromFullData(*mahasiswa) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Pembuatan tagihan baru untuk tahun aktif, hanya diperboleh untuk mahasiswa aktif"})
-		return
-	}
-
-	// Panggil repository untuk ambil tagihan mahasiswa
-	tagihan, err := tagihanRepo.GetStudentBills(mhswID, activeYear.AcademicYear)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil tagihan"})
-		return
-	}
-
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
-	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
-
-	if len(tagihan) == 0 {
-		utils.Log.Info("Memulai pembuatan tagihan baru", map[string]interface{}{
-			"mhswID":       mahasiswa.MhswID,
-			"nama":         mahasiswa.Nama,
-			"BIPOTID":      mahasiswa.BIPOTID,
-			"UKT":          mahasiswa.UKT,
-			"academicYear": activeYear.AcademicYear,
-		})
-		if err := tagihanService.CreateNewTagihan(mahasiswa, activeYear); err != nil {
-			utils.Log.Error("Gagal membuat tagihan", map[string]interface{}{
-				"mhswID":       mahasiswa.MhswID,
-				"nama":         mahasiswa.Nama,
-				"BIPOTID":      mahasiswa.BIPOTID,
-				"UKT":          mahasiswa.UKT,
-				"academicYear": activeYear.AcademicYear,
-				"error":        err.Error(),
-			})
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Gagal membuat tagihan",
-				"message": err.Error(),
-				"details": map[string]interface{}{
-					"mhswID":       mahasiswa.MhswID,
-					"BIPOTID":      mahasiswa.BIPOTID,
-					"UKT":          mahasiswa.UKT,
-					"academicYear": activeYear.AcademicYear,
-				},
-			})
-			return
-		}
-		utils.Log.Info("Tagihan berhasil dibuat", map[string]interface{}{
-			"mhswID":       mahasiswa.MhswID,
-			"academicYear": activeYear.AcademicYear,
-		})
-	}
-
-	masihAdaKurangNominal := false
-
-	mangajukanCicilan := tagihanService.CekCicilanMahasiswa(mahasiswa, activeYear)
-	tidakMengajukanCicilan := !mangajukanCicilan
-	mengajukanPenangguhan := tagihanService.CekPenangguhanMahasiswa(mahasiswa, activeYear)
-	tidakMengajukanPenangguhan := !mengajukanPenangguhan
-	mendapatBeasiswa := tagihanService.CekBeasiswaMahasiswa(mahasiswa, activeYear)
-	tidakMendapatBeasiswa := !mendapatBeasiswa
-	//punyaDeposit := tagihanService.CekDepositMahasiswa(mahasiswa, activeYear)
-	//tidakPunyaDeposit := !punyaDeposit
-
-	nominalDitagihaLebihKecilSeharusnya, tagihanSeharusnya, totalTagihanDibayar := tagihanService.IsNominalDibayarLebihKecilSeharusnya(mahasiswa, activeYear)
-
-	nominalKurangBayar := tagihanSeharusnya - totalTagihanDibayar
-
-	if tidakMengajukanCicilan && tidakMengajukanPenangguhan && tidakMendapatBeasiswa && nominalDitagihaLebihKecilSeharusnya {
-		masihAdaKurangNominal = true
-	}
-
-	utils.Log.Info("Haruskah buat tagihan baru? ", len(tagihan) > 0 && masihAdaKurangNominal, len(tagihan) > 0, masihAdaKurangNominal, tidakMengajukanCicilan, tidakMengajukanPenangguhan, tidakMendapatBeasiswa, nominalDitagihaLebihKecilSeharusnya)
-
-	if len(tagihan) > 0 && masihAdaKurangNominal {
-		if err := tagihanService.CreateNewTagihanSekurangnya(mahasiswa, activeYear, nominalKurangBayar); err != nil {
-			utils.Log.Info("Gagal membuat tagihan", "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat tagihan"})
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "OK"})
+	// Endpoint ini deprecated - tidak perlu generate tagihan lagi
+	c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint deprecated, tagihan langsung dari cicilan/registrasi"})
+	return
 }
 
 func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa) {
 	utils.Log.Info("GenerateCurrentBillPascasarjana")
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
 
 	// Panggil repository untuk ambil FinanceYear aktif
 	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(mahasiswa)
@@ -1141,7 +631,7 @@ func GenerateCurrentBillPascasarjana(c *gin.Context, mahasiswa models.Mahasiswa)
 		return
 	}
 
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
 	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo)
 
 	if err := tagihanService.CreateNewTagihanPasca(&mahasiswa, activeYear); err != nil {
@@ -1161,7 +651,7 @@ func GenerateUrlPembayaran(c *gin.Context) {
 		return
 	}
 
-	epnbpRepo := repositories.NewEpnbpRepository(database.DB)
+	epnbpRepo := repositories.NewEpnbpRepository(database.DBPNBP)
 
 	payUrl, _ := epnbpRepo.FindNotExpiredByStudentBill(studentBillID)
 	if payUrl != nil && payUrl.PayUrl != "" {
@@ -1169,61 +659,9 @@ func GenerateUrlPembayaran(c *gin.Context) {
 		return
 	}
 
-	user, mahasiswa, mustreturn := getMahasiswa(c)
-	if mustreturn {
-		return
-	}
-
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-
-	// Panggil repository untuk ambil FinanceYear aktif
-	activeYear, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tahun aktif tidak ditemukan"})
-		return
-	}
-
-	studentBill, err := tagihanRepo.FindStudentBillByID(studentBillID)
-	if err != nil {
-		utils.Log.Info("Gagal membuat tagihan", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat URL Pembayaran"})
-		return
-	}
-
-	// Validasi nominal tagihan sebelum generate payment URL
-	masterTagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
-	tagihanService := services.NewTagihanService(*tagihanRepo, masterTagihanRepo)
-	err = tagihanService.ValidateBillAmount(studentBill, mahasiswa)
-	if err != nil {
-		utils.Log.Warn("Validasi nominal tagihan gagal", map[string]interface{}{
-			"studentBillID": studentBillID,
-			"error":         err.Error(),
-		})
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   err.Error(),
-			"code":    "BILL_AMOUNT_MISMATCH",
-			"message": "Nominal tagihan tidak sesuai. Silakan klik 'Perbaiki Tagihan' untuk memperbarui tagihan.",
-		})
-		return
-	}
-
-	epnbpService := services.NewEpnbpService(epnbpRepo)
-	payUrl, err = epnbpService.GenerateNewPayUrl(
-		*user,
-		*mahasiswa,
-		*studentBill,
-		*activeYear,
-	)
-
-	if err != nil {
-		utils.Log.Info("NewEpnbpService error ", err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat URL Pembayaran"})
-		return
-	}
-
-	c.JSON(http.StatusOK, payUrl)
+	// Endpoint ini deprecated - gunakan GenerateUrlPembayaranNew
+	c.JSON(http.StatusNotFound, gin.H{"error": "Endpoint deprecated, gunakan /generate-payment-new"})
 	return
-
 }
 
 func ConfirmPembayaran(c *gin.Context) {
@@ -1244,7 +682,7 @@ func ConfirmPembayaran(c *gin.Context) {
 	}
 
 	// Validasi student bill (opsional)
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
 	studentBill, err := tagihanRepo.FindStudentBillByID(studentBillID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tagihan tidak ditemukan"})
@@ -1256,7 +694,7 @@ func ConfirmPembayaran(c *gin.Context) {
 		return
 	}
 
-	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DB}
+	masterTagihanagihanRepo := repositories.MasterTagihanRepository{DB: database.DBPNBP}
 
 	// Simpan ke database (opsional, sesuaikan dengan struktur Anda)
 	paymentConfirmation, err := services.NewTagihanService(*tagihanRepo, masterTagihanagihanRepo).SavePaymentConfirmation(*studentBill, vaNumber, paymentDate, fileURL)
@@ -1313,47 +751,31 @@ func handleUpload(c *gin.Context, filename string) (string, bool) {
 }
 
 func BackToSintesys(c *gin.Context) {
-	_, mahasiswa, isError := getMahasiswa(c)
+	mhswMaster, isError := getMahasiswa(c)
 
-	if isError {
+	if isError || mhswMaster == nil {
 		RedirectSintesys(c)
 		return
 	}
 
-	tagihanRepo := repositories.NewTagihanRepository(database.DB, database.DBPNBP)
-	year, err := tagihanRepo.GetActiveFinanceYearWithOverride(*mahasiswa)
+	tagihanRepo := repositories.NewTagihanRepository(database.DBPNBP, database.DBPNBP)
+	year, err := tagihanRepo.GetActiveFinanceYear()
 
 	if err != nil {
 		RedirectSintesys(c)
 		return
 	}
 
-	if mahasiswa.UKT == "0" {
-		hitAndBack(c, mahasiswa.MhswID, year.AcademicYear, mahasiswa.UKT)
+	UKTStr := strconv.Itoa(int(mhswMaster.UKT))
+	if UKTStr == "0" {
+		hitAndBack(c, mhswMaster.StudentID, year.AcademicYear, UKTStr)
 		return
 	}
 
-	studentBills, err := tagihanRepo.GetStudentBills(mahasiswa.MhswID, year.AcademicYear)
-
-	if err != nil {
-		RedirectSintesys(c)
-		return
-	}
-
-	isPaid := false
-	for _, studentBill := range studentBills {
-		if studentBill.PaidAmount > studentBill.Amount {
-			isPaid = true
-		}
-	}
-	if isPaid {
-		hitAndBack(c, mahasiswa.MhswID, year.AcademicYear, mahasiswa.UKT)
-		return
-	}
-
-	RedirectSintesys(c)
+	// Cek tagihan dari cicilan atau registrasi (tidak perlu cek student_bill)
+	// Langsung redirect ke sintesys
+	hitAndBack(c, mhswMaster.StudentID, year.AcademicYear, UKTStr)
 	return
-
 }
 
 func hitAndBack(c *gin.Context, studentId string, academicYear string, ukt string) {
