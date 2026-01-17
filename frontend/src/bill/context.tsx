@@ -40,7 +40,7 @@ export interface TagihanResponse {
     bantuan_ukt?: number;
     status: "paid" | "unpaid" | "partial";
     payment_start_date: string;
-    payment_end_date: string;
+    payment_end_date?: string; // Optional: hanya untuk registrasi, tidak ada untuk cicilan
     created_at: string;
     updated_at: string;
     // Untuk cicilan

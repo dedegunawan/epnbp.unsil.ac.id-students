@@ -30,10 +30,12 @@ const formatDate = (dateString: string) => {
 const getStatus = (bill: TagihanResponse): "Belum Bayar" | "Dibayar" | "Terlambat" | "Sebagian" => {
   if (bill.status === "paid" || bill.remaining_amount <= 0) return "Dibayar";
   if (bill.status === "partial") return "Sebagian";
-  // Cek apakah sudah melewati payment_end_date
-  const endDate = new Date(bill.payment_end_date);
-  const now = new Date();
-  if (now > endDate && bill.remaining_amount > 0) return "Terlambat";
+  // Cek apakah sudah melewati payment_end_date (hanya untuk registrasi, cicilan tidak punya batas akhir)
+  if (bill.source === "registrasi" && bill.payment_end_date) {
+    const endDate = new Date(bill.payment_end_date);
+    const now = new Date();
+    if (now > endDate && bill.remaining_amount > 0) return "Terlambat";
+  }
   return "Belum Bayar";
 };
 
@@ -68,6 +70,9 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
   const { tagihanHarusDibayar } = useStudentBills();
   const { token } = useAuthToken();
   const { toast } = useToast();
+
+  // Filter hanya tagihan yang belum dibayar penuh (remaining_amount > 0)
+  const unpaidBills = tagihanHarusDibayar.filter(bill => bill.remaining_amount > 0);
 
 
   const getUrlPembayaran = useCallback(async (bill: TagihanResponse) => {
@@ -171,7 +176,7 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
     }
   }, [token, toast]);
 
-  if (tagihanHarusDibayar.length === 0) {
+  if (unpaidBills.length === 0) {
     return (
       <Card className="w-full">
         <CardHeader>
@@ -197,11 +202,12 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {tagihanHarusDibayar.map((bill) => {
+        {unpaidBills.map((bill) => {
           const status = getStatus(bill);
           const isOverdue = status === "Terlambat";
-          const endDate = new Date(bill.payment_end_date);
           const startDate = new Date(bill.payment_start_date);
+          // Untuk cicilan, tidak ada payment_end_date
+          const endDate = bill.payment_end_date ? new Date(bill.payment_end_date) : null;
           
           return (
             <div
@@ -295,17 +301,26 @@ export const LatestBills = ({ onPayNow }: LatestBillsProps) => {
                     <Calendar className="h-4 w-4 mt-0.5 shrink-0" />
                     <div>
                       <p className="mb-1">
-                        <span className="font-medium">Mulai:</span> {formatDate(bill.payment_start_date)}
+                        <span className="font-medium">
+                          {bill.source === "cicilan" ? "Mulai Wajib Dibayar:" : "Mulai:"}
+                        </span> {formatDate(bill.payment_start_date)}
                       </p>
-                      <p>
-                        <span className="font-medium">Batas:</span>{" "}
-                        <span className={isOverdue ? "text-destructive font-semibold" : ""}>
-                          {formatDate(bill.payment_end_date)}
-                        </span>
-                      </p>
+                      {bill.payment_end_date && (
+                        <p>
+                          <span className="font-medium">Batas:</span>{" "}
+                          <span className={isOverdue ? "text-destructive font-semibold" : ""}>
+                            {formatDate(bill.payment_end_date)}
+                          </span>
+                        </p>
+                      )}
+                      {!bill.payment_end_date && bill.source === "cicilan" && (
+                        <p className="text-muted-foreground italic">
+                          Cicilan tidak memiliki batas akhir pembayaran
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {isOverdue && (
+                  {isOverdue && bill.payment_end_date && (
                     <p className="text-xs text-destructive font-medium">
                       ⚠️ Tagihan sudah melewati batas pembayaran
                     </p>

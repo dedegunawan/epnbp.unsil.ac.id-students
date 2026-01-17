@@ -75,36 +75,47 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 
 	for _, cicilan := range cicilans {
 		for _, detailCicilan := range cicilan.DetailCicilan {
-			// Filter: status unpaid atau amount > paid_amount
-			// Karena DetailCicilan tidak punya paid_amount di tabel, kita cek status
-			// Tampilkan jika status = "unpaid" atau status = "partial"
-			// Jika status = "paid", skip (sudah dibayar)
+			// Jika status sudah "paid" di database, langsung skip (tidak perlu ditampilkan di "Tagihan Harus Dibayar")
+			if detailCicilan.Status == "paid" {
+				// Sudah lunas, tidak perlu ditampilkan di "Tagihan Harus Dibayar"
+				continue
+			}
 			
 			// Hitung paid_amount dari payment allocation jika ada
 			paidAmount := s.getPaidAmountFromCicilan(detailCicilan.ID)
 			
-			// Tentukan status berdasarkan status di tabel atau perhitungan paid_amount
+			// Hitung sisa tagihan: amount - paid_amount
+			remainingAmount := detailCicilan.Amount - paidAmount
+			if remainingAmount < 0 {
+				remainingAmount = 0
+			}
+			
+			// Tentukan status berdasarkan remainingAmount
 			status := detailCicilan.Status
 			if status == "" {
-				// Jika status kosong, tentukan dari paid_amount
-				if paidAmount >= detailCicilan.Amount {
+				// Jika status kosong, tentukan dari remainingAmount
+				if remainingAmount == 0 {
 					status = "paid"
 				} else if paidAmount > 0 {
 					status = "partial"
 				} else {
 					status = "unpaid"
 				}
+			} else {
+				// Update status berdasarkan remainingAmount
+				if remainingAmount == 0 {
+					status = "paid"
+				} else if status == "paid" && remainingAmount > 0 {
+					// Jika status paid tapi masih ada sisa, ubah ke partial
+					status = "partial"
+				}
 			}
 			
-			// Tampilkan jika status != "paid" atau amount > paid_amount
-			if status != "paid" || detailCicilan.Amount > paidAmount {
-				remainingAmount := detailCicilan.Amount - paidAmount
-				if remainingAmount < 0 {
-					remainingAmount = 0
-				}
-
-				// PaymentEndDate = PaymentEndDate dari financeYear (dengan override)
-				paymentEndDate := financeYear.EndDate
+			// Tampilkan hanya jika masih ada sisa tagihan (remainingAmount > 0)
+			// Tagihan yang sudah lunas tidak perlu ditampilkan di "Tagihan Harus Dibayar"
+			if remainingAmount > 0 {
+				// Untuk cicilan, tidak ada batas akhir pembayaran (PaymentEndDate)
+				// Hanya ada due_date yang merupakan tanggal mulai pembayaran wajib
 
 				tagihan := models.TagihanResponse{
 					ID:              detailCicilan.ID,
@@ -117,8 +128,8 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 					PaidAmount:       paidAmount,
 					RemainingAmount:  remainingAmount,
 					Status:           status,
-					PaymentStartDate: detailCicilan.DueDate, // Due date = tanggal mulai pembayaran
-					PaymentEndDate:   paymentEndDate,
+					PaymentStartDate: detailCicilan.DueDate, // Due date = tanggal mulai pembayaran wajib
+					PaymentEndDate:   nil, // Cicilan tidak punya batas akhir pembayaran
 					CicilanID:        &cicilan.ID,
 					DetailCicilanID:  &detailCicilan.ID,
 					SequenceNo:       &detailCicilan.SequenceNo,
@@ -135,24 +146,26 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 }
 
 // getPaidAmountFromCicilan menghitung paid_amount dari payment allocation
-// Karena DetailCicilan tidak punya paid_amount, kita perlu hitung dari payment yang terkait
-// TODO: Implementasi sesuai dengan struktur payment yang ada
-// Jika ada tabel payment allocation untuk cicilan, query dari sana
-// Untuk sementara return 0, perlu disesuaikan dengan struktur payment yang ada
+// Query dari invoices -> payments di database PNBP yang terkait dengan detail_cicilan_id
 func (s *tagihanNewService) getPaidAmountFromCicilan(detailCicilanID uint) int64 {
-	// TODO: Implementasi query untuk menghitung total pembayaran untuk detail_cicilan ini
-	// Contoh jika ada tabel payment_cicilan_allocation:
-	// var total int64
-	// err := database.DBPNBP.Table("payment_cicilan_allocation").
-	//     Select("COALESCE(CAST(SUM(amount) AS SIGNED), 0)").
-	//     Where("detail_cicilan_id = ?", detailCicilanID).
-	//     Scan(&total).Error
-	// if err != nil {
-	//     utils.Log.Info("Error saat ambil paid amount cicilan:", err)
-	//     return 0
-	// }
-	// return total
-	return 0
+	var total int64
+	
+	// Query melalui invoice_relations yang punya detail_cicilan_id
+	// Join ke invoices dan payments untuk mendapatkan amount yang sudah dibayar
+	err := database.DBPNBP.Table("invoice_relations").
+		Select("COALESCE(CAST(SUM(payments.amount) AS SIGNED), 0)").
+		Joins("INNER JOIN invoices ON invoices.id = invoice_relations.invoice_id").
+		Joins("INNER JOIN payments ON payments.invoice_id = invoices.id").
+		Where("invoice_relations.detail_cicilan_id = ?", detailCicilanID).
+		Where("invoices.status = ?", "Paid").
+		Scan(&total).Error
+	
+	if err != nil {
+		utils.Log.Info("Error saat ambil paid amount cicilan dari invoice_relations:", err)
+		return 0
+	}
+	
+	return total
 }
 
 // getTagihanFromRegistrasi mengambil tagihan dari registrasi_mahasiswa
@@ -190,22 +203,26 @@ func (s *tagihanNewService) getTagihanFromRegistrasi(npm string, academicYear st
 			maxBantuan = totalBeasiswa
 		}
 
-		// Hitung sisa yang harus dibayar: (nominal_ukt - nominal_bayar - max(bantuan_ukt, beasiswa))
-		remainingAmount := nominalUKT - nominalBayar - maxBantuan
+		// Hitung sisa yang harus dibayar: nominal_ukt - max(beasiswa, bantuan_ukt) - nominal_bayar
+		remainingAmount := nominalUKT - maxBantuan - nominalBayar
 		if remainingAmount < 0 {
 			remainingAmount = 0
 		}
 
-		// Tampilkan jika remainingAmount > 0
+		// Tentukan status berdasarkan remainingAmount
+		status := "unpaid"
+		if remainingAmount == 0 {
+			status = "paid"
+		} else if nominalBayar > 0 {
+			status = "partial"
+		}
+
+		// Tampilkan hanya jika remainingAmount > 0
+		// Tagihan yang sudah lunas tidak perlu ditampilkan di "Tagihan Harus Dibayar"
 		if remainingAmount > 0 {
-			status := "unpaid"
-			if nominalBayar > 0 && nominalBayar < (nominalUKT-maxBantuan) {
-				status = "partial"
-			} else if nominalBayar >= (nominalUKT - maxBantuan) {
-				status = "paid"
-			}
 
 			// PaymentEndDate = PaymentEndDate dari financeYear (dengan override)
+			// Untuk registrasi, ada batas akhir pembayaran
 			paymentEndDate := financeYear.EndDate
 
 			// Tentukan nama tagihan
@@ -229,7 +246,7 @@ func (s *tagihanNewService) getTagihanFromRegistrasi(npm string, academicYear st
 				BantuanUKT:      totalBantuanUKT,
 				Status:           status,
 				PaymentStartDate: financeYear.StartDate, // Tanggal mulai dari finance year
-				PaymentEndDate:   paymentEndDate,
+				PaymentEndDate:   &paymentEndDate, // Registrasi punya batas akhir pembayaran
 				RegistrasiID:     &registrasiID,
 				KelUKT:           reg.KelUKT,
 				CreatedAt:        *reg.CreatedAt,
@@ -355,23 +372,20 @@ func (s *tagihanNewService) getHistoryFromRegistrasi(npm string, academicYear st
 			maxBantuan = totalBeasiswa
 		}
 
-		// Hitung sisa yang harus dibayar
-		remainingAmount := nominalUKT - nominalBayar - maxBantuan
+		// Hitung sisa yang harus dibayar: nominal_ukt - max(beasiswa, bantuan_ukt) - nominal_bayar
+		remainingAmount := nominalUKT - maxBantuan - nominalBayar
 		if remainingAmount < 0 {
 			remainingAmount = 0
 		}
 
-		// Tentukan status
+		// Tentukan status berdasarkan remainingAmount
 		status := "paid"
-		if reg.StatusStudentEPNBP != nil {
-			statusStr := *reg.StatusStudentEPNBP
-			if statusStr == "paid" || statusStr == "lunas" {
-				status = "paid"
-			} else if remainingAmount > 0 {
-				status = "partial"
-			}
-		} else if remainingAmount > 0 {
+		if remainingAmount == 0 {
+			status = "paid"
+		} else if nominalBayar > 0 {
 			status = "partial"
+		} else {
+			status = "unpaid"
 		}
 
 		// Tentukan nama tagihan
@@ -395,7 +409,7 @@ func (s *tagihanNewService) getHistoryFromRegistrasi(npm string, academicYear st
 			BantuanUKT:      totalBantuanUKT,
 			Status:           status,
 			PaymentStartDate: financeYear.StartDate,
-			PaymentEndDate:   financeYear.EndDate,
+			PaymentEndDate:   &financeYear.EndDate, // Registrasi punya batas akhir pembayaran
 			RegistrasiID:     &registrasiID,
 			KelUKT:           reg.KelUKT,
 			CreatedAt:        *reg.CreatedAt,
@@ -427,6 +441,11 @@ func (s *tagihanNewService) getHistoryFromCicilan(npm string, academicYear strin
 		for _, detailCicilan := range cicilan.DetailCicilan {
 			// Hitung paid_amount dari payment allocation
 			paidAmount := s.getPaidAmountFromCicilan(detailCicilan.ID)
+			
+			// Jika status sudah "paid" di database, anggap sudah lunas (paidAmount = amount)
+			if detailCicilan.Status == "paid" {
+				paidAmount = detailCicilan.Amount
+			}
 
 			// Filter: status = "paid" atau paid_amount > 0
 			isPaid := false
@@ -441,22 +460,38 @@ func (s *tagihanNewService) getHistoryFromCicilan(npm string, academicYear strin
 				continue
 			}
 
-			// Tentukan status
+			// Hitung sisa tagihan: amount - paid_amount
+			remainingAmount := detailCicilan.Amount - paidAmount
+			if remainingAmount < 0 {
+				remainingAmount = 0
+			}
+
+			// Tentukan status berdasarkan remainingAmount
 			status := detailCicilan.Status
 			if status == "" {
-				if paidAmount >= detailCicilan.Amount {
+				if remainingAmount == 0 {
 					status = "paid"
 				} else if paidAmount > 0 {
 					status = "partial"
 				} else {
 					status = "unpaid"
 				}
+			} else {
+				// Update status berdasarkan remainingAmount
+				// Jika status paid di tabel, pastikan remainingAmount = 0
+				if status == "paid" {
+					remainingAmount = 0
+					paidAmount = detailCicilan.Amount
+				} else if remainingAmount == 0 {
+					status = "paid"
+				} else if status == "paid" && remainingAmount > 0 {
+					// Jika status paid tapi masih ada sisa, ubah ke partial
+					status = "partial"
+				}
 			}
 
-			remainingAmount := detailCicilan.Amount - paidAmount
-			if remainingAmount < 0 {
-				remainingAmount = 0
-			}
+			// Untuk cicilan, tidak ada batas akhir pembayaran (PaymentEndDate)
+			// Hanya ada due_date yang merupakan tanggal mulai pembayaran wajib
 
 			tagihan := models.TagihanResponse{
 				ID:              detailCicilan.ID,
@@ -470,7 +505,7 @@ func (s *tagihanNewService) getHistoryFromCicilan(npm string, academicYear strin
 				RemainingAmount:  remainingAmount,
 				Status:           status,
 				PaymentStartDate: detailCicilan.DueDate,
-				PaymentEndDate:   financeYear.EndDate,
+				PaymentEndDate:   nil, // Cicilan tidak punya batas akhir pembayaran
 				CicilanID:        &cicilan.ID,
 				DetailCicilanID:  &detailCicilan.ID,
 				SequenceNo:       &detailCicilan.SequenceNo,

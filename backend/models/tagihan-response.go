@@ -15,10 +15,10 @@ type TagihanResponse struct {
 	RemainingAmount   int64     `json:"remaining_amount"`   // Sisa yang harus dibayar
 	Beasiswa          int64     `json:"beasiswa"`           // Nominal beasiswa (untuk registrasi)
 	BantuanUKT        int64     `json:"bantuan_ukt"`        // Nominal bantuan UKT (untuk registrasi)
-	Status            string    `json:"status"`              // "paid", "unpaid", "partial"
-	PaymentStartDate  time.Time `json:"payment_start_date"` // Tanggal mulai pembayaran (due_date untuk cicilan)
-	PaymentEndDate    time.Time `json:"payment_end_date"`   // Batas akhir pembayaran
-	CreatedAt         time.Time `json:"created_at"`
+	Status            string     `json:"status"`              // "paid", "unpaid", "partial"
+	PaymentStartDate  time.Time  `json:"payment_start_date"` // Tanggal mulai pembayaran (due_date untuk cicilan)
+	PaymentEndDate    *time.Time `json:"payment_end_date,omitempty"`   // Batas akhir pembayaran (hanya untuk registrasi, tidak ada untuk cicilan)
+	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	
 	// Untuk cicilan
