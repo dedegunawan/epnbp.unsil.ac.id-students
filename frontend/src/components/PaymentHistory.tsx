@@ -246,18 +246,12 @@ export const PaymentHistory = ({ onViewDetail }: PaymentHistoryProps) => {
                   <div className="flex items-start gap-2 text-xs text-muted-foreground">
                     <Calendar className="h-4 w-4 mt-0.5 shrink-0" />
                     <div>
-                      <p className="mb-1">
+                      <p>
                         <span className="font-medium">Tanggal Pembayaran:</span>{" "}
                         <span className="text-foreground font-semibold">
                           {formatDateTime(paymentDate)}
                         </span>
                       </p>
-                      {payment.payment_end_date && (
-                        <p>
-                          <span className="font-medium">Batas:</span>{" "}
-                          {formatDate(payment.payment_end_date)}
-                        </p>
-                      )}
                     </div>
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"fmt"
+gi	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
