@@ -25,6 +25,10 @@ func NewTagihanNewService(repo repositories.TagihanRepository) TagihanNewService
 }
 
 // GetTagihanMahasiswa mengambil tagihan mahasiswa dari cicilan atau registrasi
+// Catatan penting:
+// - Jika mahasiswa punya cicilan/detail_cicilan untuk tahun ini (apapun status/remaining_amount),
+//   maka sumber tagihan HANYA dari cicilan (registrasi_mahasiswa tidak dipakai sebagai sumber tagihan).
+// - Registrasi tetap bisa muncul di history (GetHistoryTagihanMahasiswa), tapi bukan di TagihanHarusDibayar.
 func (s *tagihanNewService) GetTagihanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) ([]models.TagihanResponse, error) {
 	mhswID := mahasiswa.MhswID
 	academicYear := financeYear.AcademicYear
@@ -38,13 +42,15 @@ func (s *tagihanNewService) GetTagihanMahasiswa(mahasiswa *models.Mahasiswa, fin
 		return nil, fmt.Errorf("gagal mengambil tagihan dari cicilan: %w", err)
 	}
 
-	if hasCicilan && len(cicilanTagihan) > 0 {
-		// Jika ada cicilan, return tagihan dari cicilan
+	if hasCicilan {
+		// Jika ada cicilan (walaupun semua sudah lunas), sumber tagihan hanya dari cicilan.
+		// cicilanTagihan bisa kosong jika semua angsuran sudah lunas; dalam kasus itu
+		// TagihanHarusDibayar akan kosong tapi kita tetap tidak jatuh ke registrasi_mahasiswa.
 		tagihanList = append(tagihanList, cicilanTagihan...)
 		return tagihanList, nil
 	}
 
-	// 2. Jika tidak ada cicilan, ambil dari registrasi_mahasiswa
+	// 2. Jika tidak ada cicilan sama sekali, ambil dari registrasi_mahasiswa
 	registrasiTagihan, err := s.getTagihanFromRegistrasi(mhswID, academicYear, financeYear)
 	if err != nil {
 		utils.Log.Error("Error mengambil tagihan dari registrasi", "error", err.Error())
@@ -56,6 +62,9 @@ func (s *tagihanNewService) GetTagihanMahasiswa(mahasiswa *models.Mahasiswa, fin
 }
 
 // getTagihanFromCicilan mengambil tagihan dari cicilans & detail_cicilans
+// Return:
+// - bool: true jika mahasiswa punya cicilan/detail_cicilan untuk tahun ini (apapun statusnya)
+// - []TagihanResponse: hanya angsuran yang masih punya remainingAmount > 0 (untuk TagihanHarusDibayar)
 func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear string, financeYear *models.FinanceYear) (bool, []models.TagihanResponse, error) {
 	var cicilans []models.Cicilan
 	err := database.DBPNBP.
@@ -72,24 +81,28 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 	}
 
 	var tagihanList []models.TagihanResponse
+	hasAnyDetail := false
 
 	for _, cicilan := range cicilans {
 		for _, detailCicilan := range cicilan.DetailCicilan {
+			// Ada detail cicilan untuk tahun ini
+			hasAnyDetail = true
+
 			// Jika status sudah "paid" di database, langsung skip (tidak perlu ditampilkan di "Tagihan Harus Dibayar")
 			if detailCicilan.Status == "paid" {
 				// Sudah lunas, tidak perlu ditampilkan di "Tagihan Harus Dibayar"
 				continue
 			}
-			
+
 			// Hitung paid_amount dari payment allocation jika ada
 			paidAmount := s.getPaidAmountFromCicilan(detailCicilan.ID)
-			
+
 			// Hitung sisa tagihan: amount - paid_amount
 			remainingAmount := detailCicilan.Amount - paidAmount
 			if remainingAmount < 0 {
 				remainingAmount = 0
 			}
-			
+
 			// Tentukan status berdasarkan remainingAmount
 			status := detailCicilan.Status
 			if status == "" {
@@ -110,7 +123,7 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 					status = "partial"
 				}
 			}
-			
+
 			// Tampilkan hanya jika masih ada sisa tagihan (remainingAmount > 0)
 			// Tagihan yang sudah lunas tidak perlu ditampilkan di "Tagihan Harus Dibayar"
 			if remainingAmount > 0 {
@@ -119,17 +132,17 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 
 				tagihan := models.TagihanResponse{
 					ID:              detailCicilan.ID,
-					Source:           "cicilan",
-					NPM:              npm,
-					TahunID:          cicilan.TahunID,
-					AcademicYear:     academicYear,
-					BillName:         fmt.Sprintf("Cicilan UKT - Angsuran %d", detailCicilan.SequenceNo),
-					Amount:           detailCicilan.Amount,
-					PaidAmount:       paidAmount,
-					RemainingAmount:  remainingAmount,
-					Status:           status,
+					Source:          "cicilan",
+					NPM:             npm,
+					TahunID:         cicilan.TahunID,
+					AcademicYear:    academicYear,
+					BillName:        fmt.Sprintf("Cicilan UKT - Angsuran %d", detailCicilan.SequenceNo),
+					Amount:          detailCicilan.Amount,
+					PaidAmount:      paidAmount,
+					RemainingAmount: remainingAmount,
+					Status:          status,
 					PaymentStartDate: detailCicilan.DueDate, // Due date = tanggal mulai pembayaran wajib
-					PaymentEndDate:   nil, // Cicilan tidak punya batas akhir pembayaran
+					PaymentEndDate:   nil,                   // Cicilan tidak punya batas akhir pembayaran
 					CicilanID:        &cicilan.ID,
 					DetailCicilanID:  &detailCicilan.ID,
 					SequenceNo:       &detailCicilan.SequenceNo,
@@ -142,7 +155,7 @@ func (s *tagihanNewService) getTagihanFromCicilan(npm string, academicYear strin
 		}
 	}
 
-	return len(tagihanList) > 0, tagihanList, nil
+	return hasAnyDetail, tagihanList, nil
 }
 
 // getPaidAmountFromCicilan menghitung paid_amount dari payment allocation
