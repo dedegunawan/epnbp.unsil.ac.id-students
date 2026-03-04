@@ -24,40 +24,109 @@ func NewTagihanNewService(repo repositories.TagihanRepository) TagihanNewService
 	return &tagihanNewService{repo: repo}
 }
 
-// GetTagihanMahasiswa mengambil tagihan mahasiswa dari cicilan atau registrasi
-// Catatan penting:
-// - Jika mahasiswa punya cicilan/detail_cicilan untuk tahun ini (apapun status/remaining_amount),
-//   maka sumber tagihan HANYA dari cicilan (registrasi_mahasiswa tidak dipakai sebagai sumber tagihan).
-// - Registrasi tetap bisa muncul di history (GetHistoryTagihanMahasiswa), tapi bukan di TagihanHarusDibayar.
+// getAllRelevantAcademicYears mengambil semua tahun_id (semester) yang relevan untuk mahasiswa:
+// - Diambil dari tabel cicilans dan registrasi_mahasiswa
+// - Disaring hanya tahun_id <= academicYear aktif
+// - Digabung dan diurutkan ascending (termasuk tahun-tahun sebelumnya)
+func getAllRelevantAcademicYears(npm string, currentAcademicYear string) ([]string, error) {
+	type TahunRow struct {
+		TahunID string `gorm:"column:tahun_id"`
+	}
+
+	yearsMap := make(map[string]struct{})
+	var result []string
+
+	// Ambil tahun_id dari cicilans
+	var cicilanYears []TahunRow
+	err := database.DBPNBP.
+		Table("cicilans").
+		Select("DISTINCT tahun_id").
+		Where("npm = ? AND tahun_id <= ?", npm, currentAcademicYear).
+		Order("tahun_id ASC").
+		Scan(&cicilanYears).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range cicilanYears {
+		if row.TahunID == "" {
+			continue
+		}
+		if _, ok := yearsMap[row.TahunID]; !ok {
+			yearsMap[row.TahunID] = struct{}{}
+			result = append(result, row.TahunID)
+		}
+	}
+
+	// Ambil tahun_id dari registrasi_mahasiswa
+	var regYears []TahunRow
+	err = database.DBPNBP.
+		Table("registrasi_mahasiswa").
+		Select("DISTINCT tahun_id").
+		Where("npm = ? AND tahun_id <= ?", npm, currentAcademicYear).
+		Order("tahun_id ASC").
+		Scan(&regYears).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range regYears {
+		if row.TahunID == "" {
+			continue
+		}
+		if _, ok := yearsMap[row.TahunID]; !ok {
+			yearsMap[row.TahunID] = struct{}{}
+			result = append(result, row.TahunID)
+		}
+	}
+
+	// Jika tidak ada tahun sama sekali, fallback ke tahun aktif saja
+	if len(result) == 0 && currentAcademicYear != "" {
+		return []string{currentAcademicYear}, nil
+	}
+
+	return result, nil
+}
+
 func (s *tagihanNewService) GetTagihanMahasiswa(mahasiswa *models.Mahasiswa, financeYear *models.FinanceYear) ([]models.TagihanResponse, error) {
 	mhswID := mahasiswa.MhswID
 	academicYear := financeYear.AcademicYear
 
 	var tagihanList []models.TagihanResponse
 
-	// 1. Cek apakah ada cicilan
-	hasCicilan, cicilanTagihan, err := s.getTagihanFromCicilan(mhswID, academicYear, financeYear)
+	// Siapkan daftar tahun yang akan dicek:
+	// - Semua tahun_id cicilan/registrasi untuk mahasiswa ini dengan tahun_id <= academicYear
+	tahunList, err := getAllRelevantAcademicYears(mhswID, academicYear)
 	if err != nil {
-		utils.Log.Error("Error mengambil tagihan dari cicilan", "error", err.Error())
-		return nil, fmt.Errorf("gagal mengambil tagihan dari cicilan: %w", err)
+		utils.Log.Error("Error mengambil daftar tahun_id tagihan", "error", err.Error(), "mhswID", mhswID, "academic_year", academicYear)
+		// Fallback: hanya tahun aktif
+		tahunList = []string{academicYear}
 	}
 
-	if hasCicilan {
-		// Jika ada cicilan (walaupun semua sudah lunas), sumber tagihan hanya dari cicilan.
-		// cicilanTagihan bisa kosong jika semua angsuran sudah lunas; dalam kasus itu
-		// TagihanHarusDibayar akan kosong tapi kita tetap tidak jatuh ke registrasi_mahasiswa.
-		tagihanList = append(tagihanList, cicilanTagihan...)
-		return tagihanList, nil
+	for _, tahunID := range tahunList {
+		// 1. Cek cicilan untuk tahun ini
+		hasCicilan, cicilanTagihan, err := s.getTagihanFromCicilan(mhswID, tahunID, financeYear)
+		if err != nil {
+			utils.Log.Error("Error mengambil tagihan dari cicilan", "error", err.Error(), "tahun_id", tahunID)
+			return nil, fmt.Errorf("gagal mengambil tagihan dari cicilan: %w", err)
+		}
+
+		if hasCicilan {
+			// Jika tahun ini punya cicilan (walaupun semua sudah lunas), sumber tagihan tahun ini hanya dari cicilan.
+			// cicilanTagihan bisa kosong jika semua angsuran sudah lunas; dalam kasus itu
+			// TagihanHarusDibayar akan kosong untuk tahun tersebut, tapi kita tetap tidak jatuh ke registrasi_mahasiswa.
+			tagihanList = append(tagihanList, cicilanTagihan...)
+			continue
+		}
+
+		// 2. Jika tahun ini tidak punya cicilan sama sekali, ambil dari registrasi_mahasiswa
+		registrasiTagihan, err := s.getTagihanFromRegistrasi(mhswID, tahunID, financeYear)
+		if err != nil {
+			utils.Log.Error("Error mengambil tagihan dari registrasi", "error", err.Error(), "tahun_id", tahunID)
+			return nil, fmt.Errorf("gagal mengambil tagihan dari registrasi: %w", err)
+		}
+
+		tagihanList = append(tagihanList, registrasiTagihan...)
 	}
 
-	// 2. Jika tidak ada cicilan sama sekali, ambil dari registrasi_mahasiswa
-	registrasiTagihan, err := s.getTagihanFromRegistrasi(mhswID, academicYear, financeYear)
-	if err != nil {
-		utils.Log.Error("Error mengambil tagihan dari registrasi", "error", err.Error())
-		return nil, fmt.Errorf("gagal mengambil tagihan dari registrasi: %w", err)
-	}
-
-	tagihanList = append(tagihanList, registrasiTagihan...)
 	return tagihanList, nil
 }
 
